@@ -1,5 +1,7 @@
 export const BACKEND_BASE_URL = (
-  import.meta.env.VITE_BACKEND_URL || window.location.origin.replace(/:\d+$/, ":5000")
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_BACKEND_URL ||
+  window.location.origin.replace(/:\d+$/, ":5000")
 ).replace(/\/$/, "");
 
 export const API_BASE_URL = `${BACKEND_BASE_URL}/api`;

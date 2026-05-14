@@ -392,10 +392,43 @@ export default function DataDesa() {
       alert(error.response?.status === 404 ? "File surat belum tersedia atau tidak ditemukan" : "Gagal mengunduh surat");
     }
   };
+
+  const MASA_BERLAKU_HARI = 3;
+
+  const parseDateValue = (value) => {
+    if (!value) return null;
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  const getTanggalSelesaiPengajuan = (item) => {
+    return (
+      parseDateValue(item?.tanggal_selesai) ||
+      parseDateValue(item?.updated_at) ||
+      parseDateValue(item?.tanggal_update) ||
+      parseDateValue(item?.tanggal_pengajuan)
+    );
+  };
+
+  const getBatasBerlakuSurat = (item) => {
+    const tanggalMulai = getTanggalSelesaiPengajuan(item);
+    if (!tanggalMulai) return null;
+    const batas = new Date(tanggalMulai);
+    batas.setDate(batas.getDate() + MASA_BERLAKU_HARI);
+    return batas;
+  };
+
+  const isPengajuanExpired = (item) => {
+    if (item?.status !== "SELESAI" || !item?.file_final) return false;
+    const batasBerlaku = getBatasBerlakuSurat(item);
+    if (!batasBerlaku) return false;
+    return new Date() > batasBerlaku;
+  };
   
   // Filter pengajuan
   const filteredPengajuan = pengajuanSaya.filter(item => {
     if (statusFilter && item.status !== statusFilter) return false;
+    if (isPengajuanExpired(item)) return false;
     return true;
   });
   
@@ -904,6 +937,7 @@ export default function DataDesa() {
                     {filteredPengajuan.map((item, idx) => {
                       const alasanField = item.detail_fields?.find(f => f.field_name === 'alasan_dispensasi' || f.field_name === 'tujuan_rekomendasi' || f.field_name === 'sejarah_singkat' || f.field_name === 'keterangan');
                       const alasan = alasanField?.field_value || item.detail_fields?.[0]?.field_value || '-';
+                      const batasBerlaku = getBatasBerlakuSurat(item);
                       
                       return (
                         <motion.div key={item.id_pengajuan} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }} className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-amber-500 hover:shadow-xl transition-all">
@@ -920,6 +954,11 @@ export default function DataDesa() {
                                   <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDate(item.tanggal_pengajuan)}</span>
                                   {item.no_surat && <span className="flex items-center gap-1"><FileText className="w-3 h-3" /> No. {item.no_surat}</span>}
                                 </div>
+                                {item.status === "SELESAI" && item.file_final && batasBerlaku && (
+                                  <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 inline-flex px-2 py-1 rounded-md">
+                                    Surat berlaku 3 hari sampai {formatDateTime(batasBerlaku)}. Disarankan segera download sebelum masa berlaku habis.
+                                  </p>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -985,6 +1024,13 @@ export default function DataDesa() {
               </div>
               
               <div className="flex justify-between items-center mb-4">{getStatusBadge(selectedPengajuan.status)}{selectedPengajuan.no_surat && <p className="text-sm text-gray-600">No. Surat: {selectedPengajuan.no_surat}</p>}</div>
+              {selectedPengajuan.status === "SELESAI" && selectedPengajuan.file_final && getBatasBerlakuSurat(selectedPengajuan) && (
+                <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-sm text-amber-800">
+                    Surat berlaku 3 hari sampai {formatDateTime(getBatasBerlakuSurat(selectedPengajuan))}. Disarankan download dokumen/surat sebelum masa berlaku habis.
+                  </p>
+                </div>
+              )}
               
               <div className="border-t pt-4 mb-4"><h4 className="font-semibold text-gray-800 mb-3">Data Pengajuan</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
