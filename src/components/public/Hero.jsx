@@ -103,7 +103,6 @@ export default function Hero() {
           }}
           onLoad={() => setImageLoaded(true)}
           onError={(e) => {
-            console.error("Gambar background gagal dimuat:", backgroundImageUrl);
             e.target.onerror = null;
             // Fallback ke gradien jika gambar gagal dimuat
             e.target.style.display = 'none';

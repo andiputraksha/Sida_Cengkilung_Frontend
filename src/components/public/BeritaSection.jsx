@@ -1,12 +1,17 @@
 ﻿import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
-import { API_BASE_URL, BACKEND_BASE_URL } from "@/utils/api";
+import { API_BASE_URL, buildAssetUrl } from "@/utils/api";
 
 export default function BeritaSection() {
   const [berita, setBerita] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const IMAGE_FALLBACK =
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(
+      "<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300' viewBox='0 0 400 300'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='#059669'/><stop offset='100%' stop-color='#d97706'/></linearGradient></defs><rect width='400' height='300' fill='url(#g)'/><text x='50%' y='50%' fill='white' font-size='22' font-family='Arial, sans-serif' text-anchor='middle' dominant-baseline='middle'>Desa Adat Cengkilung</text></svg>"
+    );
 
   useEffect(() => {
     fetchBerita();
@@ -15,12 +20,7 @@ export default function BeritaSection() {
   const fetchBerita = async () => {
     try {
       setLoading(true);
-      console.log("Mengambil data berita...");
-      
       const res = await axios.get(`${API_BASE_URL}/konten`);
-      
-      console.log("Response lengkap:", res);
-      console.log("Data response:", res.data);
       
       // AMBIL DATA DENGAN BENAR - PERHATIKAN STRUKTURNYA
       let kontenList = [];
@@ -28,25 +28,18 @@ export default function BeritaSection() {
       // Struktur dari response Anda: { success: true, message: "...", data: [...] }
       if (res.data && res.data.success && Array.isArray(res.data.data)) {
         kontenList = res.data.data;
-        console.log("Menggunakan res.data.data, jumlah:", kontenList.length);
       } 
       // Fallback jika struktur berbeda
       else if (Array.isArray(res.data)) {
         kontenList = res.data;
-        console.log("Menggunakan res.data (array), jumlah:", kontenList.length);
       } 
       else if (res.data && Array.isArray(res.data.data)) {
         kontenList = res.data.data;
-        console.log("Menggunakan res.data.data (alternatif), jumlah:", kontenList.length);
       }
-      
-      console.log("Semua konten:", kontenList);
       
       // TAMPILKAN SEMUA KONTEN TANPA FILTER DULU UNTUK TEST
       // Ambil 3 konten pertama apapun statusnya
       const kontenTerbaru = kontenList.slice(0, 3);
-      
-      console.log("3 Konten pertama:", kontenTerbaru);
       setBerita(kontenTerbaru);
       
     } catch (err) {
@@ -190,21 +183,18 @@ export default function BeritaSection() {
             const gambar = getValue(item, 'gambar');
             const isi = getValue(item, 'isi');
             const tanggal = getValue(item, 'tanggal');
-            
-            console.log(`Berita ${index + 1}:`, { id, judul, gambar, tanggal });
-            
             return (
               <article key={id || index} className="bg-white rounded-2xl shadow-xl hover:shadow-2xl overflow-hidden transform transition-all duration-500 hover:-translate-y-2">
                 {/* Image */}
                 <Link to={`/berita/${id}`} className="block relative overflow-hidden h-56">
                   {gambar ? (
                     <img
-                      src={`${BACKEND_BASE_URL}/${gambar}`}
+                      src={buildAssetUrl(gambar)}
                       alt={judul}
                       className="w-full h-full object-cover transform hover:scale-110 transition-transform duration-700"
                       onError={(e) => {
                         e.target.onerror = null;
-                        e.target.src = 'https://via.placeholder.com/400x300?text=Desa+Adat+Cengkilung';
+                        e.target.src = IMAGE_FALLBACK;
                       }}
                     />
                   ) : (

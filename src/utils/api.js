@@ -11,7 +11,21 @@ export const buildAssetUrl = (path = "") => {
   if (!raw) return "";
   if (/^https?:\/\//i.test(raw)) return raw;
 
-  const normalizedPath = raw.replace(/\\/g, "/").replace(/^\/+/, "");
+  let normalizedPath = raw.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!normalizedPath) return "";
+
+  // Be tolerant with legacy/saved paths from DB:
+  // - "src/uploads/..." -> "uploads/..."
+  // - "/api/uploads/..." -> "uploads/..."
+  // - "<domain>/uploads/..." is handled by extracting from "/uploads/"
+  normalizedPath = normalizedPath.replace(/^src\/uploads\//i, "uploads/");
+  normalizedPath = normalizedPath.replace(/^api\/uploads\//i, "uploads/");
+
+  const uploadsIndex = normalizedPath.toLowerCase().indexOf("uploads/");
+  if (uploadsIndex > 0) {
+    normalizedPath = normalizedPath.slice(uploadsIndex);
+  }
+
   if (!normalizedPath) return "";
 
   return `${BACKEND_BASE_URL}/${normalizedPath}`;
