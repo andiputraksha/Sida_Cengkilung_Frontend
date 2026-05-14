@@ -1,13 +1,13 @@
 ﻿import { Link } from "react-router-dom";
 import { useState } from "react";
-import { BACKEND_BASE_URL } from "@/utils/api";
+import { buildAssetUrl } from "@/utils/api";
 import qrCodeImage from "@/assets/qrcode.png";
 
 export default function Footer() {
   const [email, setEmail] = useState("");
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLogoError, setIsLogoError] = useState(false);
-  const logoUrl = `${BACKEND_BASE_URL}/uploads/profil/logo.png`;
+  const logoUrl = buildAssetUrl("uploads/profil/logo.png");
 
   const handleSubscribe = (e) => {
     e.preventDefault();

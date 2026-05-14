@@ -1,13 +1,13 @@
 ﻿import { Link, useNavigate, useLocation } from "react-router-dom";
 import { getUser, logout } from "@/utils/auth";
 import { useState, useEffect, useRef } from "react";
-import { BACKEND_BASE_URL } from "@/utils/api";
+import { buildAssetUrl } from "@/utils/api";
 
 export default function Navbar() {
   const user = getUser();
   const navigate = useNavigate();
   const location = useLocation();
-  const logoUrl = `${BACKEND_BASE_URL}/uploads/profil/logo.png`;
+  const logoUrl = buildAssetUrl("uploads/profil/logo.png");
   
   const [openMenu, setOpenMenu] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);

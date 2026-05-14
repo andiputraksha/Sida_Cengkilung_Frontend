@@ -1,8 +1,14 @@
-export const BACKEND_BASE_URL = (
+const normalizeBackendBaseUrl = (value = "") =>
+  String(value)
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/api$/i, "");
+
+export const BACKEND_BASE_URL = normalizeBackendBaseUrl(
   import.meta.env.VITE_API_URL ||
   import.meta.env.VITE_BACKEND_URL ||
   window.location.origin.replace(/:\d+$/, ":5000")
-).replace(/\/$/, "");
+);
 
 export const API_BASE_URL = `${BACKEND_BASE_URL}/api`;
 
