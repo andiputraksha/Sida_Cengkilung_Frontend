@@ -2,7 +2,7 @@
 import axios from "axios";
 import DataTable from "@/components/ui/DataTable";
 import Modal from "@/components/ui/Modal";
-import { API_BASE_URL, BACKEND_BASE_URL } from "@/utils/api";
+import { API_BASE_URL, BACKEND_BASE_URL, buildAssetUrl } from "@/utils/api";
 import {
   Image,
   Video,
@@ -445,7 +445,7 @@ export default function GaleriPage() {
     
     // Jika video upload dan ada thumbnail, gunakan thumbnail dari server
     if (row.thumbnail) {
-      return `${BACKEND_BASE_URL}/${row.thumbnail}`;
+      return buildAssetUrl(row.thumbnail);
     }
     
     // Jika tidak ada thumbnail, return null untuk fallback ke ikon
@@ -458,15 +458,16 @@ export default function GaleriPage() {
       accessor: "file_path",
       render: (value, row) => {
         const videoThumbnail = row.tipe_media === 'video' ? getVideoThumbnail(row) : null;
-        const thumbnailUrl = videoThumbnail || (row.thumbnail ? `${BACKEND_BASE_URL}/${row.thumbnail}` : null);
+        const thumbnailUrl = videoThumbnail || (row.thumbnail ? buildAssetUrl(row.thumbnail) : null);
         const hasError = thumbnailErrors[row.id_galeri];
+        const fotoSrc = hasError ? buildAssetUrl(row.file_path) : buildAssetUrl(row.thumbnail || row.file_path);
         
         return (
           <div className="flex items-center gap-3">
             <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-gradient-to-br from-amber-500 to-amber-600 flex-shrink-0">
               {row.tipe_media === 'foto' ? (
                 <img 
-                  src={`${BACKEND_BASE_URL}/${row.thumbnail || row.file_path}`} 
+                  src={fotoSrc}
                   alt={row.judul_media}
                   className="w-full h-full object-cover"
                   onError={() => handleThumbnailError(row.id_galeri)}
@@ -1190,7 +1191,7 @@ export default function GaleriPage() {
             <div className="relative bg-black rounded-lg overflow-hidden">
               {selectedMedia.tipe_media === 'foto' ? (
                 <img
-                  src={`${BACKEND_BASE_URL}/${selectedMedia.file_path}`}
+                  src={buildAssetUrl(selectedMedia.file_path)}
                   alt={selectedMedia.judul_media}
                   className="w-full max-h-[70vh] object-contain"
                 />
@@ -1205,7 +1206,7 @@ export default function GaleriPage() {
                     ></iframe>
                   ) : (
                     <video
-                      src={`${BACKEND_BASE_URL}/${selectedMedia.file_path}`}
+                      src={buildAssetUrl(selectedMedia.file_path)}
                       controls
                       className="w-full h-[70vh]"
                     />
