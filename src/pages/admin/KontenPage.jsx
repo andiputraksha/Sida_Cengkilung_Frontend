@@ -31,6 +31,13 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 
 const API_URL = `${API_BASE_URL}/konten`;
+const toDateTimeLocalValue = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 export default function KontenPage() {
   const [konten, setKonten] = useState([]);
@@ -183,7 +190,7 @@ export default function KontenPage() {
       isi_konten: item.isi_konten,
       id_kategori_konten: item.id_kategori_konten,
       status_konten: item.status_konten,
-      tanggal_publikasi: item.tanggal_publikasi ? item.tanggal_publikasi.split('T')[0] : "",
+      tanggal_publikasi: toDateTimeLocalValue(item.tanggal_publikasi),
       thumbnail: null
     });
     setEditId(item.id_konten);
