@@ -117,7 +117,7 @@ export default function Galeri() {
   };
 
   const handleImageError = (id) => {
-    setImageErrors(prev => ({ ...prev, [id]: true }));
+    setImageErrors(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
   };
 
   // Fungsi untuk mengecek apakah string adalah URL YouTube
@@ -197,11 +197,28 @@ export default function Galeri() {
     
     // Jika video upload dan ada thumbnail, gunakan thumbnail dari server
     if (item.thumbnail) {
-      return `${BACKEND_BASE_URL}/${item.thumbnail}`;
+      return buildAssetUrl(item.thumbnail);
     }
     
     // Jika tidak ada thumbnail, return null
     return null;
+  };
+
+  const getImageCandidates = (item) => {
+    const candidates = [];
+    if (item.tipe_media === "video") {
+      const videoThumb = getVideoThumbnail(item);
+      if (videoThumb) candidates.push(videoThumb);
+      const filePath = buildAssetUrl(item.file_path);
+      if (filePath) candidates.push(filePath);
+      return [...new Set(candidates)];
+    }
+
+    const thumb = buildAssetUrl(item.thumbnail);
+    const filePath = buildAssetUrl(item.file_path);
+    if (thumb) candidates.push(thumb);
+    if (filePath) candidates.push(filePath);
+    return [...new Set(candidates)];
   };
 
   if (loading) {
@@ -386,10 +403,9 @@ export default function Galeri() {
               const itemKategori = getCategoryName(item.id_kategori_galeri);
               const kategoriColor = getCategoryColor(item.id_kategori_galeri);
               const tanggal = formatDate(item.tanggal_publikasi || item.tanggal_dibuat);
-              const thumbnail = item.tipe_media === 'video' 
-                ? getVideoThumbnail(item)
-                : (item.thumbnail ? `${BACKEND_BASE_URL}/${item.thumbnail}` : `${BACKEND_BASE_URL}/${item.file_path}`);
-              const hasError = imageErrors[itemId];
+              const imageCandidates = getImageCandidates(item);
+              const currentAttempt = imageErrors[itemId] || 0;
+              const thumbnail = imageCandidates[currentAttempt] || null;
               
               return (
                 <div
@@ -401,7 +417,7 @@ export default function Galeri() {
                   <div className="relative overflow-hidden h-56">
                     {item.tipe_media === 'foto' ? (
                       <>
-                        {thumbnail && !hasError ? (
+                        {thumbnail ? (
                           <img
                             src={thumbnail}
                             alt={item.judul_media}
@@ -418,7 +434,7 @@ export default function Galeri() {
                       </>
                     ) : (
                       <div className="w-full h-full bg-gradient-to-br from-amber-500 to-amber-600 relative">
-                        {thumbnail && !hasError ? (
+                        {thumbnail ? (
                           <img
                             src={thumbnail}
                             alt={item.judul_media}
@@ -561,7 +577,7 @@ export default function Galeri() {
             <div className="bg-black aspect-video flex items-center justify-center">
               {selectedItem.tipe_media === 'foto' ? (
                 <img
-                  src={`${BACKEND_BASE_URL}/${selectedItem.file_path || selectedItem.thumbnail}`}
+                  src={buildAssetUrl(selectedItem.file_path || selectedItem.thumbnail)}
                   alt={selectedItem.judul_media}
                   className="max-w-full max-h-full object-contain"
                 />
@@ -579,12 +595,12 @@ export default function Galeri() {
                   ) : (
                     // Jika video upload, tampilkan video player
                     <video
-                      src={`${BACKEND_BASE_URL}/${selectedItem.file_path}`}
+                      src={buildAssetUrl(selectedItem.file_path)}
                       controls
                       autoPlay
                       className="w-full h-full object-contain"
                     >
-                      <source src={`${BACKEND_BASE_URL}/${selectedItem.file_path}`} />
+                      <source src={buildAssetUrl(selectedItem.file_path)} />
                       Browser Anda tidak mendukung tag video.
                     </video>
                   )}
@@ -616,7 +632,7 @@ export default function Galeri() {
               {selectedItem.tipe_media === 'video' && !isYouTubeUrl(selectedItem.file_path) && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
                   <a
-                    href={`${BACKEND_BASE_URL}/${selectedItem.file_path}`}
+                    href={buildAssetUrl(selectedItem.file_path)}
                     download
                     className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
                   >
