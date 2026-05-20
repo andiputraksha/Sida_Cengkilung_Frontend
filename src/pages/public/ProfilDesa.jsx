@@ -2,41 +2,37 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { BACKEND_BASE_URL, buildAssetUrl } from "@/utils/api";
+
 const perangkat = [
   {
     nama: "Ngakan Made Tapayasa",
     jabatan: "Bendesa Adat",
     periode: "Periode 2024-2029",
     deskripsi: "Memimpin seluruh kegiatan adat dan keagamaan di Desa Adat Cengkilung",
-    // pendidikan: "S2 Magister Manajemen",
   },
   {
     nama: "I Nyoman Suandi",
     jabatan: "Wakil Bendesa Adat",
     periode: "Periode 2024-2029",
     deskripsi: "Membantu Bendesa Adat dalam koordinasi kegiatan adat dan kemasyarakatan",
-    // pendidikan: "S1 Pendidikan",
   },
   {
     nama: "I Ketut Murdi Wijaya",
     jabatan: "Sekretaris",
     periode: "Periode 2024-2029",
     deskripsi: "Mengelola administrasi dan kesekretariatan desa adat",
-    // pendidikan: "S1 Hukum",
   },
   {
     nama: "I Made Arsana, SE",
     jabatan: "Bendahara",
     periode: "Periode 2024-2029",
     deskripsi: "Mengelola keuangan dan aset desa adat secara transparan",
-    // pendidikan: "S1 Ekonomi",
   },
   {
     nama: "Made Sudarsana",
     jabatan: "Kelian Banjar",
     periode: "Periode 2024-2029",
     deskripsi: "Memimpin pelaksanaan kegiatan di tingkat banjar adat",
-    // pendidikan: "SMA",
   },
 ];
 
@@ -109,6 +105,22 @@ export default function ProfilDesa() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loadedImages, setLoadedImages] = useState({});
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapError, setMapError] = useState(false);
+
+  // Koordinat Balai Banjar Cengkilung (sesuai Google Maps yang benar)
+  const mapLatitude = -8.597667;
+  const mapLongitude = 115.2284205;
+  const mapCoordinates = `${mapLatitude},${mapLongitude}`;
+  
+  // Google Maps Embed URL untuk Balai Banjar Cengkilung
+  const mapEmbedUrl = `https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3944.5500000000002!2d${mapLongitude}!3d${mapLatitude}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2dd23ef091701cb3%3A0x23a583970ccba804!2sBalai+Banjar+Cengkilung!5e0!3m2!1sen!2sid!4v1697000000000!5m2!1sen!2sid`;
+  
+  // URL untuk tombol aksi
+  const googleMapsPlaceUrl = "https://www.google.com/maps/place/Balai+Banjar+Cengkilung/@-8.5978221,115.2272221,18z/data=!4m6!3m5!1s0x2dd23ef091701cb3:0x23a583970ccba804!8m2!3d-8.597667!4d115.2284205!16s%2Fg%2F11f3jmm8s5?entry=ttu&g_ep=EgoyMDI2MDUxNy4wIKXMDSoASAFQAw%3D%3D";
+  
+  // URL untuk petunjuk arah (direction) ke Balai Banjar Cengkilung
+  const directionUrl = `https://www.google.com/maps/dir/?api=1&destination=${mapCoordinates}&destination_place_id=ChIJsx1wkfA-0i0RBAjLDJeQpSM`;
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -160,9 +172,16 @@ export default function ProfilDesa() {
     }
   };
 
+  const handleMapLoad = () => {
+    setMapLoaded(true);
+  };
+
+  const handleMapError = () => {
+    setMapError(true);
+  };
+
   return (
     <div className="bg-gradient-to-b from-gray-50 to-white min-h-screen">
-      {/* ================= HERO SECTION ================= */}
       {/* ================= HERO SECTION ================= */}
       <div className="relative text-white overflow-hidden">
         {/* Background Image with Overlay */}
@@ -305,18 +324,6 @@ export default function ProfilDesa() {
                   Angklung, Semarpegulingan, dan Topeng Wali.
                 </p>
               </div>
-
-              {/* Quick Facts */}
-              {/* <div className="grid grid-cols-2 gap-4 mt-8">
-                <div className="bg-gradient-to-br from-emerald-50 to-amber-50 p-4 rounded-xl">
-                  <div className="text-2xl font-bold text-emerald-600">1920</div>
-                  <div className="text-sm text-gray-600">Tahun Berdiri</div>
-                </div>
-                <div className="bg-gradient-to-br from-amber-50 to-amber-50 p-4 rounded-xl">
-                  <div className="text-2xl font-bold text-amber-600">5</div>
-                  <div className="text-sm text-gray-600">Banjar Adat</div>
-                </div>
-              </div> */}
             </div>
 
             {/* Image Gallery dengan Preview */}
@@ -593,13 +600,6 @@ export default function ProfilDesa() {
                   <p className="text-xs text-gray-500 border-t border-gray-100 pt-3">
                     {item.deskripsi}
                   </p>
-
-                  {/* Education Badge */}
-                  {/* <div className="absolute top-3 right-3">
-                    <span className="inline-block px-2 py-1 bg-emerald-100 text-emerald-700 text-xs rounded-full">
-                      {item.pendidikan}
-                    </span>
-                  </div> */}
                 </div>
               </div>
             ))}
@@ -646,7 +646,7 @@ export default function ProfilDesa() {
           </div>
         </section>
 
-        {/* ===== PETA DESA ===== */}
+        {/* ===== PETA DESA (INTERAKTIF GOOGLE MAPS) ===== */}
         <section 
           id="peta"
           data-observe
@@ -655,10 +655,10 @@ export default function ProfilDesa() {
           }`}
         >
           <div className="bg-gray-900 rounded-3xl overflow-hidden shadow-2xl">
-            <div className="grid md:grid-cols-2">
-              {/* Map Info */}
-              <div className="p-8 md:p-12 text-white">
-                <span className="inline-block px-4 py-2 bg-white/20 rounded-full text-sm font-semibold mb-4">
+            <div className="grid md:grid-cols-5">
+              {/* Map Info - 2 kolom */}
+              <div className="md:col-span-2 p-8 md:p-12 text-white flex flex-col justify-center">
+                <span className="inline-block px-4 py-2 bg-white/20 rounded-full text-sm font-semibold mb-4 w-fit">
                   Lokasi Desa
                 </span>
                 <h2 className="text-3xl font-bold mb-4">
@@ -666,49 +666,139 @@ export default function ProfilDesa() {
                 </h2>
                 <p className="text-white/70 mb-6 leading-relaxed">
                   Desa Adat Cengkilung terletak di lokasi strategis yang mudah diakses 
-                  dari berbagai arah. Silakan kunjungi kami atau gunakan peta untuk petunjuk arah.
+                  dari berbagai arah. Silakan kunjungi Balai Banjar Cengkilung atau gunakan 
+                  peta interaktif di samping untuk petunjuk arah.
                 </p>
                 
                 <div className="space-y-4 mb-8">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                    <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
                       <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
                     </div>
-                    <span className="text-sm">Jl. Cekomaria II, Br. Cengkilung, Peguyangan Kangin, Denpasar Utara</span>
+                    <div>
+                      <p className="text-sm font-semibold text-white/90">Balai Banjar Cengkilung</p>
+                      <p className="text-sm text-white/70">Jl. Cekomaria II, Banjar Cengkilung, Peguyangan Kangin, Kec. Denpasar Utara, Kota Denpasar, Bali</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                    <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
                       <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                       </svg>
                     </div>
-                    <span className="text-sm">0822-3662-4414</span>
+                    <div>
+                      <p className="text-sm font-semibold text-white/90">Telepon/WhatsApp</p>
+                      <p className="text-sm text-white/70">0822-3662-4414</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-white/90">Email</p>
+                      <p className="text-sm text-white/70">desaadatcengkilung@gmail.com</p>
+                    </div>
                   </div>
                 </div>
 
-                <a
-                  href="https://maps.app.goo.gl/MJ9pUDrz2apPxsK59"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-amber-600 text-white font-semibold rounded-xl hover:shadow-lg transform hover:-translate-y-1 transition-all duration-300"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                  </svg>
-                  <span>Buka di Google Maps</span>
-                </a>
+                <div className="flex flex-wrap gap-3">
+                  <a
+                    href={googleMapsPlaceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-amber-600 text-white font-semibold rounded-xl hover:shadow-lg transform hover:-translate-y-1 transition-all duration-300"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                    </svg>
+                    <span>Buka di Google Maps</span>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                  <a
+                    href={directionUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-white/10 backdrop-blur-sm text-white font-semibold rounded-xl hover:bg-white/20 border border-white/20 transform hover:-translate-y-1 transition-all duration-300"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                    <span>Petunjuk Arah</span>
+                  </a>
+                </div>
               </div>
 
-              {/* Map Placeholder */}
-              <div className="h-64 md:h-auto bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
-                <div className="text-center">
-                  <svg className="w-24 h-24 text-gray-700 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                  </svg>
-                  <p className="text-gray-500 text-sm">Peta Interaktif</p>
-                  <p className="text-gray-600 text-xs mt-2">Klik tombol di samping untuk membuka Google Maps</p>
+              {/* Google Maps Embed - 3 kolom */}
+              <div className="md:col-span-3 relative min-h-[400px] md:min-h-[500px]">
+                {/* Loading State */}
+                {!mapLoaded && !mapError && (
+                  <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center z-10">
+                    <div className="text-center">
+                      <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                      <p className="text-gray-400 text-sm">Memuat peta...</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Error State */}
+                {mapError && (
+                  <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center z-10">
+                    <div className="text-center p-8">
+                      <svg className="w-16 h-16 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                      </svg>
+                      <p className="text-gray-400 text-sm mb-4">Gagal memuat peta interaktif</p>
+                      <a
+                        href={googleMapsPlaceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors"
+                      >
+                        Buka di Google Maps
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Google Maps Iframe */}
+                <iframe
+                  src={mapEmbedUrl}
+                  width="100%"
+                  height="100%"
+                  className="absolute inset-0 w-full h-full"
+                  style={{ border: 0, minHeight: '400px' }}
+                  allowFullScreen=""
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  title="Peta Lokasi Balai Banjar Cengkilung"
+                  onLoad={handleMapLoad}
+                  onError={handleMapError}
+                ></iframe>
+
+                {/* Map Overlay - Pin Marker */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full pointer-events-none z-20">
+                  <div className="relative">
+                    {/* Pin Shadow */}
+                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-2 bg-black/30 rounded-full blur-sm"></div>
+                    {/* Pin Animation */}
+                    <div className="animate-bounce">
+                      <svg className="w-10 h-12 text-red-500 drop-shadow-lg" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Map Watermark */}
+                <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm rounded-md px-2 py-1 text-xs text-gray-600 z-10 pointer-events-none">
+                  Data peta ©2025 Google
                 </div>
               </div>
             </div>
@@ -840,5 +930,3 @@ export default function ProfilDesa() {
     </div>
   );
 }
-
-
