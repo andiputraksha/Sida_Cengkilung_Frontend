@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState, useMemo } from "react";
 import axios from "axios";
 import Modal from "@/components/ui/Modal";
 import { API_BASE_URL, buildAssetUrl } from "@/utils/api";
@@ -20,6 +20,7 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  BellRing,
   Clock,
   Archive,
   File,
@@ -49,12 +50,63 @@ import {
   ChevronUp,
   GripVertical,
   Copy,
-  HelpCircle
+  HelpCircle,
+  ArrowUp,
+  ArrowDown,
+  AlertTriangle,
+  Info
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const API_URL = `${API_BASE_URL}/dokumen`;
 const SURAT_API_URL = `${API_BASE_URL}/surat`;
+
+// Tambahkan DataTables CSS
+const dataTablesStyles = `
+  .priority-datatable {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .priority-datatable thead th {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    padding: 14px 16px;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #495057;
+    border-bottom: 2px solid #dee2e6;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .priority-datatable tbody tr {
+    transition: all 0.2s ease;
+  }
+  .priority-datatable tbody tr:hover {
+    background-color: #f8f9fa;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .priority-datatable tbody td {
+    padding: 12px 16px;
+    border-bottom: 1px solid #f1f3f5;
+    vertical-align: middle;
+  }
+  .priority-datatable .priority-row-merah {
+    border-left: 4px solid #ef4444;
+    background-color: #fef2f2;
+  }
+  .priority-datatable .priority-row-kuning {
+    border-left: 4px solid #eab308;
+    background-color: #fefce8;
+  }
+  .priority-datatable .priority-row-hijau {
+    border-left: 4px solid #22c55e;
+    background-color: #f0fdf4;
+  }
+`;
 
 export default function DokumenPage() {
   // ==================== STATE ====================
@@ -122,6 +174,14 @@ export default function DokumenPage() {
   const [showDokumenFilters, setShowDokumenFilters] = useState(false);
   const [showSuratFilters, setShowSuratFilters] = useState(false);
   
+  // Priority table state
+  const [prioritySortField, setPrioritySortField] = useState("prioritas");
+  const [prioritySortDirection, setPrioritySortDirection] = useState("asc");
+  const [prioritySearchTerm, setPrioritySearchTerm] = useState("");
+  const [priorityFilterLevel, setPriorityFilterLevel] = useState("semua");
+  const [priorityCurrentPage, setPriorityCurrentPage] = useState(1);
+  const [priorityItemsPerPage, setPriorityItemsPerPage] = useState(10);
+  
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -133,6 +193,8 @@ export default function DokumenPage() {
   const [selectedFile, setSelectedFile] = useState(null);
   
   const token = localStorage.getItem("token");
+  
+  // ... (semua fungsi utility tetap sama: parseJsonSafely, normalizeJenisSurat, normalizePengajuan, dll.) ...
   
   const parseJsonSafely = (value, fallback) => {
     if (value === null || value === undefined) return fallback;
@@ -173,6 +235,175 @@ export default function DokumenPage() {
       lampiran: item.lampiran || [],
       logs: item.logs || []
     }));
+
+  const SOP_SURAT_HARI_KERJA = 5;
+  const ACTIVE_SURAT_STATUSES = ["MENUNGGU", "DRAFT", "LEGALISI", "SIAP"];
+
+  const normalizePriorityText = (value) =>
+    String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+
+  const parseDateValue = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+
+  const isWeekend = (date) => {
+    const day = date.getDay();
+    return day === 0 || day === 6;
+  };
+
+  const addBusinessDays = (date, days) => {
+    const result = new Date(date);
+    let added = 0;
+    while (added < days) {
+      result.setDate(result.getDate() + 1);
+      if (!isWeekend(result)) added += 1;
+    }
+    return result;
+  };
+
+  const countBusinessDaysBetween = (startDate, endDate) => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    if (end <= start) return 0;
+
+    let total = 0;
+    const cursor = new Date(start);
+    while (cursor < end) {
+      cursor.setDate(cursor.getDate() + 1);
+      if (!isWeekend(cursor)) total += 1;
+    }
+    return total;
+  };
+
+  const getDetailText = (item) =>
+    (item.detail_fields || [])
+      .map((field) => `${field.field_name || ""} ${field.field_value || ""}`)
+      .join(" ");
+
+  const findEventDate = (item) => {
+    const dateFieldKeywords = ["tanggal", "dewasa", "pelaksanaan", "kegiatan", "upacara", "karya"];
+    const candidates = (item.detail_fields || []).filter((field) =>
+      dateFieldKeywords.some((keyword) => normalizePriorityText(field.field_name).includes(keyword))
+    );
+
+    for (const field of candidates) {
+      const date = parseDateValue(field.field_value);
+      if (date) return date;
+    }
+    return null;
+  };
+
+  const getSuratPriority = (item) => {
+    const submittedAt = parseDateValue(item.tanggal_pengajuan);
+    const deadline = submittedAt ? addBusinessDays(submittedAt, SOP_SURAT_HARI_KERJA) : null;
+    const remainingBusinessDays = deadline ? countBusinessDaysBetween(new Date(), deadline) : null;
+    const overdue = deadline ? new Date().setHours(0, 0, 0, 0) > new Date(deadline).setHours(0, 0, 0, 0) : false;
+    const jenis = normalizePriorityText(item.jenis_surat?.nama_jenis || item.nama_jenis);
+    const details = normalizePriorityText(getDetailText(item));
+    const combined = `${jenis} ${details}`;
+    const eventDate = findEventDate(item);
+    const daysToEvent = eventDate ? Math.ceil((eventDate - new Date()) / (1000 * 60 * 60 * 24)) : null;
+
+    const urgentKeywords = ["mendesak", "darurat", "besok", "lusa", "kematian", "hukum", "klaim", "jaminan", "dispensasi"];
+    const importantKeywords = ["warisan budaya", "pawiwahan", "perkawinan", "perceraian", "sengketa", "klaim", "verifikasi", "pecalang", "menengah"];
+    const routineKeywords = ["rekomendasi umum", "aktif sebagai krama", "beasiswa", "melamar pekerjaan", "pendataan rutin", "akademisi", "penelitian", "karya rutin", "otonan", "ngabar"];
+
+    if (
+      overdue ||
+      remainingBusinessDays === 0 ||
+      remainingBusinessDays === 1 ||
+      urgentKeywords.some((keyword) => combined.includes(keyword)) ||
+      (jenis.includes("pelaksanaan karya") && daysToEvent !== null && daysToEvent <= 2)
+    ) {
+      return {
+        level: "merah",
+        label: "Mendesak / Kritis",
+        tone: "bg-red-100 text-red-800 border-red-200",
+        border: "border-red-500",
+        dot: "bg-red-500",
+        icon: AlertTriangle,
+        order: 1,
+        deadline,
+        remainingBusinessDays,
+        reason: overdue
+          ? "melewati SOP 5 hari kerja"
+          : typeof remainingBusinessDays === "number" && remainingBusinessDays <= 1
+            ? "mendekati batas SOP"
+            : "terikat waktu/kondisi mendesak"
+      };
+    }
+
+    if (routineKeywords.some((keyword) => combined.includes(keyword))) {
+      return {
+        level: "hijau",
+        label: "Rutin / Aman",
+        tone: "bg-green-100 text-green-800 border-green-200",
+        border: "border-green-500",
+        dot: "bg-green-500",
+        icon: CheckCircle,
+        order: 3,
+        deadline,
+        remainingBusinessDays,
+        reason: "pengajuan rutin/informatif"
+      };
+    }
+
+    if (
+      remainingBusinessDays === 2 ||
+      remainingBusinessDays === 3 ||
+      importantKeywords.some((keyword) => combined.includes(keyword)) ||
+      (jenis.includes("pelaksanaan karya") && daysToEvent !== null && daysToEvent <= 30)
+    ) {
+      return {
+        level: "kuning",
+        label: "Penting",
+        tone: "bg-yellow-100 text-yellow-800 border-yellow-200",
+        border: "border-yellow-500",
+        dot: "bg-yellow-500",
+        icon: AlertCircle,
+        order: 2,
+        deadline,
+        remainingBusinessDays,
+        reason: "perlu verifikasi/koordinasi"
+      };
+    }
+
+    return {
+      level: "hijau",
+      label: "Rutin / Aman",
+      tone: "bg-green-100 text-green-800 border-green-200",
+      border: "border-green-500",
+      dot: "bg-green-500",
+      icon: CheckCircle,
+      order: 3,
+      deadline,
+      remainingBusinessDays,
+      reason: "pengajuan rutin"
+    };
+  };
+
+  const getPriorityBadge = (item) => {
+    const priority = getSuratPriority(item);
+    return (
+      <div className="flex flex-col gap-1">
+        <span className={`inline-flex w-fit items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${priority.tone}`}>
+          <span className={`w-2 h-2 rounded-full ${priority.dot}`}></span>
+          {priority.label}
+        </span>
+        <span className="text-xs text-gray-500">
+          {priority.remainingBusinessDays === null
+            ? "Deadline belum tersedia"
+            : priority.remainingBusinessDays === 0
+              ? "Jatuh tempo hari ini"
+              : `${priority.remainingBusinessDays} hari kerja tersisa`}
+        </span>
+      </div>
+    );
+  };
 
   // Jenis dokumen harus mengikuti master jenis surat
   const jenisDokumenOptions = jenisSurat
@@ -244,33 +475,73 @@ export default function DokumenPage() {
     }
   };
 
+  // ==================== PERBAIKAN 1: FETCH SEMUA DATA SAAT KOMPONEN MOUNT ====================
+  // Ini memastikan notifikasi angka langsung muncul saat halaman dibuka
+  useEffect(() => {
+    const fetchAllDataOnMount = async () => {
+      try {
+        setLoading(true);
+        // Fetch semua data sekaligus saat komponen pertama kali dimount
+        await Promise.all([
+          fetchDokumen({ withLoading: false }),
+          fetchPengajuanSurat({ withLoading: false }),
+          fetchJenisSurat({ withLoading: false })
+        ]);
+      } catch (error) {
+        console.error("Error fetching initial data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchAllDataOnMount();
+  }, []); // Hanya dijalankan sekali saat mount
+
+  // Refresh data saat tab berubah (untuk memastikan data tetap segar)
+  useEffect(() => {
+    const refreshTabData = async () => {
+      try {
+        setRefreshing(true);
+        
+        if (activeTab === "dokumen") {
+          await Promise.all([
+            fetchDokumen({ withLoading: false }),
+            fetchJenisSurat({ withLoading: false })
+          ]);
+        } else if (activeTab === "manajemen_surat") {
+          await Promise.all([
+            fetchPengajuanSurat({ withLoading: false }),
+            fetchJenisSurat({ withLoading: false })
+          ]);
+        } else {
+          await fetchJenisSurat({ withLoading: false });
+        }
+      } finally {
+        setRefreshing(false);
+      }
+    };
+    
+    refreshTabData();
+  }, [activeTab]);
+
   const handleRefreshData = async () => {
     try {
       setRefreshing(true);
       setLoading(true);
 
-      if (activeTab === "dokumen") {
-        await Promise.all([
-          fetchDokumen({ withLoading: false }),
-          fetchJenisSurat({ withLoading: false })
-        ]);
-      } else if (activeTab === "manajemen_surat") {
-        await Promise.all([
-          fetchPengajuanSurat({ withLoading: false }),
-          fetchJenisSurat({ withLoading: false })
-        ]);
-      } else {
-        await fetchJenisSurat({ withLoading: false });
-      }
+      // Fetch semua data
+      await Promise.all([
+        fetchDokumen({ withLoading: false }),
+        fetchPengajuanSurat({ withLoading: false }),
+        fetchJenisSurat({ withLoading: false })
+      ]);
     } finally {
       setRefreshing(false);
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    handleRefreshData();
-  }, [activeTab]);
+  
+  // ... (semua fungsi CRUD tetap sama: handleDokumenSubmit, handleEditDokumen, handleDeleteDokumen, dll.) ...
   
   // ==================== DOKUMEN CRUD ====================
   
@@ -565,35 +836,59 @@ export default function DokumenPage() {
     );
   };
   
+  const getNextSuratStatus = (status) => {
+    switch (status) {
+      case "MENUNGGU": return "DRAFT";
+      case "DRAFT": return "LEGALISI";
+      case "LEGALISI": return "SIAP";
+      case "SIAP": return "SELESAI";
+      case "SELESAI": return "SELESAI";
+      default: return status || "";
+    }
+  };
+
+  const getSuratActionLabel = (status) => {
+    switch (status) {
+      case "MENUNGGU": return "Verifikasi";
+      case "DRAFT": return "Proses Draft";
+      case "LEGALISI": return "TTD & Cap";
+      case "SIAP": return "Tandai Diambil";
+      case "SELESAI": return "Lihat";
+      default: return "Proses";
+    }
+  };
+
   const getActionButton = (row) => {
+    const nextStatus = getNextSuratStatus(row.status);
+
     switch (row.status) {
       case "MENUNGGU":
         return (
-          <button onClick={() => openSuratModal(row, "DRAFT")} className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => openSuratModal(row, nextStatus)} className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors">
             Verifikasi
           </button>
         );
       case "DRAFT":
         return (
-          <button onClick={() => openSuratModal(row, "LEGALISI")} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => openSuratModal(row, nextStatus)} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
             Proses Draft
           </button>
         );
       case "LEGALISI":
         return (
-          <button onClick={() => openSuratModal(row, "SIAP")} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => openSuratModal(row, nextStatus)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
             TTD & Cap
           </button>
         );
       case "SIAP":
         return (
-          <button onClick={() => openSuratModal(row, "SELESAI")} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => openSuratModal(row, nextStatus)} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
             Tandai Diambil
           </button>
         );
       case "SELESAI":
         return (
-          <button onClick={() => openSuratModal(row, "SELESAI")} className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-medium transition-colors">
+          <button onClick={() => openSuratModal(row, nextStatus)} className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-medium transition-colors">
             Lihat
           </button>
         );
@@ -619,12 +914,25 @@ export default function DokumenPage() {
     return true;
   });
   
-  const filteredPengajuan = pengajuanSurat.filter(item => {
-    if (suratFilter.search && !item.pemohon?.nama_lengkap?.toLowerCase().includes(suratFilter.search.toLowerCase())) return false;
-    if (suratFilter.jenis && item.jenis_surat?.id_jenis != suratFilter.jenis) return false;
-    if (suratFilter.status && item.status !== suratFilter.status) return false;
-    return true;
-  });
+  const filteredPengajuan = pengajuanSurat
+    .filter(item => {
+      if (suratFilter.search && !item.pemohon?.nama_lengkap?.toLowerCase().includes(suratFilter.search.toLowerCase())) return false;
+      if (suratFilter.jenis && item.jenis_surat?.id_jenis != suratFilter.jenis) return false;
+      if (suratFilter.status && item.status !== suratFilter.status) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const priorityA = getSuratPriority(a);
+      const priorityB = getSuratPriority(b);
+      if (ACTIVE_SURAT_STATUSES.includes(a.status) !== ACTIVE_SURAT_STATUSES.includes(b.status)) {
+        return ACTIVE_SURAT_STATUSES.includes(a.status) ? -1 : 1;
+      }
+      if (priorityA.order !== priorityB.order) return priorityA.order - priorityB.order;
+      const deadlineA = priorityA.deadline?.getTime?.() || Number.MAX_SAFE_INTEGER;
+      const deadlineB = priorityB.deadline?.getTime?.() || Number.MAX_SAFE_INTEGER;
+      if (deadlineA !== deadlineB) return deadlineA - deadlineB;
+      return new Date(b.tanggal_pengajuan || 0) - new Date(a.tanggal_pengajuan || 0);
+    });
   
   const filteredJenisSurat = jenisSurat.filter(item => {
     if (jenisSuratFilter.search && !item.nama_jenis?.toLowerCase().includes(jenisSuratFilter.search.toLowerCase())) return false;
@@ -671,6 +979,115 @@ export default function DokumenPage() {
     LEGALISI: pengajuanSurat.filter(p => p.status === 'LEGALISI').length,
     SIAP: pengajuanSurat.filter(p => p.status === 'SIAP').length,
     SELESAI: pengajuanSurat.filter(p => p.status === 'SELESAI').length
+  };
+
+  const activePengajuanSurat = pengajuanSurat.filter((item) => ACTIVE_SURAT_STATUSES.includes(item.status));
+  const suratPriorityStats = activePengajuanSurat.reduce((acc, item) => {
+    const priority = getSuratPriority(item);
+    acc[priority.level] = (acc[priority.level] || 0) + 1;
+    return acc;
+  }, { merah: 0, kuning: 0, hijau: 0 });
+
+  // ==================== PERBAIKAN 2: PRIORITY DATATABLE LOGIC ====================
+  
+  // Data untuk tabel prioritas
+  const allPriorityData = useMemo(() => {
+    return activePengajuanSurat.map((item) => {
+      const priority = getSuratPriority(item);
+      return {
+        ...item,
+        priority,
+        id: item.id_pengajuan,
+        pemohonNama: item.pemohon?.nama_lengkap || "-",
+        pemohonEmail: item.pemohon?.email || "-",
+        jenisSuratNama: item.jenis_surat?.nama_jenis || "-",
+        tanggalPengajuan: item.tanggal_pengajuan,
+        status: item.status,
+        deadline: priority.deadline,
+        remainingDays: priority.remainingBusinessDays,
+        reason: priority.reason,
+        level: priority.level,
+        label: priority.label
+      };
+    });
+  }, [activePengajuanSurat]);
+
+  // Filter priority data
+  const filteredPriorityData = useMemo(() => {
+    let data = [...allPriorityData];
+    
+    // Filter by level
+    if (priorityFilterLevel !== "semua") {
+      data = data.filter(item => item.level === priorityFilterLevel);
+    }
+    
+    // Filter by search
+    if (prioritySearchTerm) {
+      const search = prioritySearchTerm.toLowerCase();
+      data = data.filter(item => 
+        item.pemohonNama.toLowerCase().includes(search) ||
+        item.jenisSuratNama.toLowerCase().includes(search) ||
+        item.reason.toLowerCase().includes(search)
+      );
+    }
+    
+    // Sort data
+    data.sort((a, b) => {
+      let comparison = 0;
+      switch (prioritySortField) {
+        case "prioritas":
+          comparison = a.priority.order - b.priority.order;
+          break;
+        case "pemohon":
+          comparison = a.pemohonNama.localeCompare(b.pemohonNama);
+          break;
+        case "jenis":
+          comparison = a.jenisSuratNama.localeCompare(b.jenisSuratNama);
+          break;
+        case "deadline":
+          const deadlineA = a.deadline?.getTime?.() || Number.MAX_SAFE_INTEGER;
+          const deadlineB = b.deadline?.getTime?.() || Number.MAX_SAFE_INTEGER;
+          comparison = deadlineA - deadlineB;
+          break;
+        case "hari":
+          comparison = (a.remainingDays ?? Number.MAX_SAFE_INTEGER) - (b.remainingDays ?? Number.MAX_SAFE_INTEGER);
+          break;
+        case "status":
+          comparison = a.status.localeCompare(b.status);
+          break;
+        default:
+          comparison = a.priority.order - b.priority.order;
+      }
+      return prioritySortDirection === "asc" ? comparison : -comparison;
+    });
+    
+    return data;
+  }, [allPriorityData, priorityFilterLevel, prioritySearchTerm, prioritySortField, prioritySortDirection]);
+
+  // Priority table pagination
+  const priorityTotalItems = filteredPriorityData.length;
+  const priorityTotalPages = Math.ceil(priorityTotalItems / priorityItemsPerPage);
+  const priorityStartIndex = (priorityCurrentPage - 1) * priorityItemsPerPage;
+  const priorityEndIndex = priorityStartIndex + priorityItemsPerPage;
+  const priorityCurrentItems = filteredPriorityData.slice(priorityStartIndex, priorityEndIndex);
+
+  const handlePrioritySort = (field) => {
+    if (prioritySortField === field) {
+      setPrioritySortDirection(prioritySortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setPrioritySortField(field);
+      setPrioritySortDirection("asc");
+    }
+    setPriorityCurrentPage(1);
+  };
+
+  const getSortIcon = (field) => {
+    if (prioritySortField !== field) {
+      return <ChevronDown className="w-4 h-4 text-gray-400" />;
+    }
+    return prioritySortDirection === "asc" 
+      ? <ChevronUp className="w-4 h-4 text-amber-600" />
+      : <ChevronDown className="w-4 h-4 text-amber-600" />;
   };
 
   // ==================== COLUMN DEFINITIONS ====================
@@ -758,6 +1175,11 @@ export default function DokumenPage() {
         </div>
       )
     },
+    {
+      header: "PRIORITAS",
+      accessor: "prioritas",
+      render: (_, row) => getPriorityBadge(row)
+    },
     { 
       header: "STATUS", 
       accessor: "status",
@@ -824,11 +1246,114 @@ export default function DokumenPage() {
       render: (value) => getStatusBadge(value)
     }
   ];
+
+  // Priority Table Columns
+  const priorityColumns = [
+    { 
+      header: "PRIORITAS", 
+      field: "prioritas",
+      render: (row) => {
+        const PriorityIcon = row.priority.icon;
+        const levelConfig = {
+          merah: { bg: "bg-red-100", text: "text-red-700", border: "border-red-300" },
+          kuning: { bg: "bg-yellow-100", text: "text-yellow-700", border: "border-yellow-300" },
+          hijau: { bg: "bg-green-100", text: "text-green-700", border: "border-green-300" }
+        };
+        const config = levelConfig[row.level];
+        return (
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${config.bg} ${config.text} ${config.border}`}>
+            <PriorityIcon className="w-3.5 h-3.5" />
+            {row.label}
+          </span>
+        );
+      }
+    },
+    { 
+      header: "PEMOHON", 
+      field: "pemohon",
+      render: (row) => (
+        <div>
+          <div className="font-medium text-gray-900">{row.pemohonNama}</div>
+          <div className="text-xs text-gray-500">{row.pemohonEmail}</div>
+        </div>
+      )
+    },
+    { 
+      header: "JENIS SURAT", 
+      field: "jenis",
+      render: (row) => (
+        <span className="text-sm font-medium text-gray-700">{row.jenisSuratNama}</span>
+      )
+    },
+    { 
+      header: "DEADLINE", 
+      field: "deadline",
+      render: (row) => (
+        <div className="flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 text-gray-500" />
+          <span className="text-sm text-gray-700">
+            {row.deadline ? formatTanggal(row.deadline) : "-"}
+          </span>
+        </div>
+      )
+    },
+    { 
+      header: "SISA HARI", 
+      field: "hari",
+      render: (row) => {
+        const days = row.remainingDays;
+        if (days === null) return <span className="text-sm text-gray-500">-</span>;
+        let colorClass = "text-gray-700";
+        if (days <= 1) colorClass = "text-red-600 font-bold";
+        else if (days <= 3) colorClass = "text-yellow-600 font-semibold";
+        else colorClass = "text-green-600";
+        
+        return (
+          <span className={`text-sm ${colorClass}`}>
+            {days === 0 ? "Hari ini!" : `${days} hari`}
+          </span>
+        );
+      }
+    },
+    { 
+      header: "STATUS", 
+      field: "status",
+      render: (row) => getStatusBadge(row.status)
+    },
+    { 
+      header: "ALASAN", 
+      field: "alasan",
+      render: (row) => (
+        <div className="flex items-center gap-1.5">
+          <Info className="w-3.5 h-3.5 text-gray-400" />
+          <span className="text-xs text-gray-600 line-clamp-1">{row.reason}</span>
+        </div>
+      )
+    },
+    { 
+      header: "AKSI", 
+      field: "aksi",
+      render: (row) => (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            openSuratModal(row, getNextSuratStatus(row.status));
+          }}
+          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition-colors"
+        >
+          {getSuratActionLabel(row.status)}
+        </button>
+      )
+    }
+  ];
   
   // ==================== RENDER ====================
   
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="p-6 space-y-6">
+      
+      {/* Inject DataTables Styles */}
+      <style>{dataTablesStyles}</style>
       
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -892,8 +1417,11 @@ export default function DokumenPage() {
             }`}
           >
             <Users className="w-4 h-4" /> Manajemen Surat
+            {/* Notifikasi angka langsung muncul karena data sudah di-fetch saat mount */}
             {suratStats.MENUNGGU > 0 && (
-              <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{suratStats.MENUNGGU}</span>
+              <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">
+                {suratStats.MENUNGGU}
+              </span>
             )}
           </button>
           <button 
@@ -1250,8 +1778,255 @@ export default function DokumenPage() {
               </motion.div>
             ))}
           </div>
+
+          {/* ==================== PERBAIKAN 2: NOTIFIKASI PRIORITAS BERBENTUK DATATABLE ==================== */}
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 bg-gradient-to-br from-red-100 to-red-200 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <BellRing className="w-6 h-6 text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-800 text-lg">Notifikasi Prioritas Penanganan Surat</h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Sistem mengurutkan surat aktif berdasarkan SOP <span className="font-medium text-amber-600">5 hari kerja</span> (Senin-Jumat).
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Summary Cards */}
+                <div className="grid grid-cols-3 gap-3 w-full lg:w-auto">
+                  <div className="rounded-xl border-2 border-red-200 bg-gradient-to-br from-red-50 to-red-100 px-4 py-3 text-center shadow-sm">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <AlertTriangle className="w-4 h-4 text-red-600" />
+                      <p className="text-xs font-bold text-red-700 uppercase tracking-wider">Merah</p>
+                    </div>
+                    <p className="text-2xl font-bold text-red-800">{suratPriorityStats.merah || 0}</p>
+                    <p className="text-xs text-red-600 mt-0.5">Mendesak</p>
+                  </div>
+                  <div className="rounded-xl border-2 border-yellow-200 bg-gradient-to-br from-yellow-50 to-yellow-100 px-4 py-3 text-center shadow-sm">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <AlertCircle className="w-4 h-4 text-yellow-600" />
+                      <p className="text-xs font-bold text-yellow-700 uppercase tracking-wider">Kuning</p>
+                    </div>
+                    <p className="text-2xl font-bold text-yellow-800">{suratPriorityStats.kuning || 0}</p>
+                    <p className="text-xs text-yellow-600 mt-0.5">Penting</p>
+                  </div>
+                  <div className="rounded-xl border-2 border-green-200 bg-gradient-to-br from-green-50 to-green-100 px-4 py-3 text-center shadow-sm">
+                    <div className="flex items-center justify-center gap-1.5 mb-1">
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                      <p className="text-xs font-bold text-green-700 uppercase tracking-wider">Hijau</p>
+                    </div>
+                    <p className="text-2xl font-bold text-green-800">{suratPriorityStats.hijau || 0}</p>
+                    <p className="text-xs text-green-600 mt-0.5">Rutin</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar untuk Priority Table */}
+            <div className="p-4 bg-gray-50 border-b border-gray-200">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Cari pemohon, jenis surat..."
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={prioritySearchTerm}
+                    onChange={(e) => {
+                      setPrioritySearchTerm(e.target.value);
+                      setPriorityCurrentPage(1);
+                    }}
+                  />
+                </div>
+                <select
+                  className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  value={priorityFilterLevel}
+                  onChange={(e) => {
+                    setPriorityFilterLevel(e.target.value);
+                    setPriorityCurrentPage(1);
+                  }}
+                >
+                  <option value="semua">Semua Level Prioritas</option>
+                  <option value="merah">🔴 Merah - Mendesak</option>
+                  <option value="kuning">🟡 Kuning - Penting</option>
+                  <option value="hijau">🟢 Hijau - Rutin</option>
+                </select>
+                <select
+                  className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  value={priorityItemsPerPage}
+                  onChange={(e) => {
+                    setPriorityItemsPerPage(Number(e.target.value));
+                    setPriorityCurrentPage(1);
+                  }}
+                >
+                  <option value="5">5 data per halaman</option>
+                  <option value="10">10 data per halaman</option>
+                  <option value="25">25 data per halaman</option>
+                  <option value="50">50 data per halaman</option>
+                </select>
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <span className="font-medium text-amber-600">{priorityTotalItems}</span> 
+                  surat aktif ditemukan
+                </div>
+              </div>
+            </div>
+
+            {/* Priority DataTable */}
+            <div className="overflow-x-auto">
+              <table className="priority-datatable">
+                <thead>
+                  <tr>
+                    {priorityColumns.map((col, index) => (
+                      <th 
+                        key={index}
+                        onClick={() => col.field !== "aksi" && col.field !== "alasan" && handlePrioritySort(col.field)}
+                        className={`${col.field !== "aksi" && col.field !== "alasan" ? "cursor-pointer hover:bg-gray-200 transition-colors" : ""}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {col.header}
+                          {col.field !== "aksi" && col.field !== "alasan" && getSortIcon(col.field)}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {priorityCurrentItems.length > 0 ? (
+                    priorityCurrentItems.map((row, index) => (
+                      <motion.tr
+                        key={row.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.03 }}
+                        className={`priority-row-${row.level} cursor-pointer`}
+                        onClick={() => openSuratModal(row, getNextSuratStatus(row.status))}
+                      >
+                        {priorityColumns.map((col, colIndex) => (
+                          <td key={colIndex}>
+                            {col.render(row)}
+                          </td>
+                        ))}
+                      </motion.tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={priorityColumns.length} className="text-center py-12">
+                        <div className="flex flex-col items-center">
+                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                            <BellRing className="w-8 h-8 text-gray-400" />
+                          </div>
+                          <p className="text-gray-500 font-medium">Tidak ada surat yang perlu diprioritaskan</p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {priorityFilterLevel !== "semua" 
+                              ? "Coba ubah filter level prioritas" 
+                              : "Semua surat telah selesai diproses"}
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Priority Table Pagination */}
+            {priorityTotalItems > 0 && (
+              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <span>
+                      Menampilkan {priorityTotalItems === 0 ? 0 : priorityStartIndex + 1} - {Math.min(priorityEndIndex, priorityTotalItems)} dari {priorityTotalItems} data
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setPriorityCurrentPage(1)}
+                      disabled={priorityCurrentPage === 1}
+                      className={`p-2 rounded-lg transition-colors ${
+                        priorityCurrentPage === 1
+                          ? 'text-gray-400 cursor-not-allowed'
+                          : 'text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      <ChevronsLeft className="w-5 h-5" />
+                    </button>
+                    
+                    <button
+                      onClick={() => setPriorityCurrentPage(priorityCurrentPage - 1)}
+                      disabled={priorityCurrentPage === 1}
+                      className={`p-2 rounded-lg transition-colors ${
+                        priorityCurrentPage === 1
+                          ? 'text-gray-400 cursor-not-allowed'
+                          : 'text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, priorityTotalPages) }, (_, i) => {
+                        let pageNum;
+                        if (priorityTotalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (priorityCurrentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (priorityCurrentPage >= priorityTotalPages - 2) {
+                          pageNum = priorityTotalPages - 4 + i;
+                        } else {
+                          pageNum = priorityCurrentPage - 2 + i;
+                        }
+                        
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setPriorityCurrentPage(pageNum)}
+                            className={`w-10 h-10 rounded-lg font-medium transition-colors ${
+                              priorityCurrentPage === pageNum
+                                ? 'bg-amber-600 text-white shadow-md'
+                                : 'text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      onClick={() => setPriorityCurrentPage(priorityCurrentPage + 1)}
+                      disabled={priorityCurrentPage === priorityTotalPages}
+                      className={`p-2 rounded-lg transition-colors ${
+                        priorityCurrentPage === priorityTotalPages
+                          ? 'text-gray-400 cursor-not-allowed'
+                          : 'text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+
+                    <button
+                      onClick={() => setPriorityCurrentPage(priorityTotalPages)}
+                      disabled={priorityCurrentPage === priorityTotalPages}
+                      className={`p-2 rounded-lg transition-colors ${
+                        priorityCurrentPage === priorityTotalPages
+                          ? 'text-gray-400 cursor-not-allowed'
+                          : 'text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      <ChevronsRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           
-          {/* Filter Section */}
+          {/* Filter Section untuk tabel utama surat */}
           <div className="bg-white rounded-xl shadow-lg p-6">
             <div className="flex items-center justify-between mb-4">
               <button 
@@ -1259,7 +2034,7 @@ export default function DokumenPage() {
                 className="flex items-center gap-2 text-gray-700 hover:text-amber-600 transition-colors"
               >
                 <Filter className="w-5 h-5" />
-                <span className="font-medium">Filter & Pencarian</span>
+                <span className="font-medium">Filter & Pencarian Semua Surat</span>
                 <ChevronRight className={`w-4 h-4 transition-transform ${showSuratFilters ? 'rotate-90' : ''}`} />
               </button>
               
@@ -1322,7 +2097,7 @@ export default function DokumenPage() {
             </AnimatePresence>
           </div>
           
-          {/* Table Manajemen Surat */}
+          {/* Table Manajemen Surat (Semua) */}
           {loading && pengajuanSurat.length === 0 ? (
             <div className="bg-white rounded-xl shadow-lg p-12">
               <div className="flex flex-col items-center justify-center">
@@ -1689,6 +2464,7 @@ export default function DokumenPage() {
           )}
         </>
       )}
+      
       
       {/* ==================== MODAL DOKUMEN ==================== */}
       <Modal isOpen={isDokumenModalOpen} onClose={() => { setIsDokumenModalOpen(false); resetDokumenForm(); }} title={editDokumenId ? "Edit Dokumen" : "Tambah Dokumen"} size="lg">

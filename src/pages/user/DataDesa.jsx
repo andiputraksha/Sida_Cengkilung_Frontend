@@ -63,6 +63,7 @@ export default function DataDesa() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterJenis, setFilterJenis] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [pengajuanTimeFilter, setPengajuanTimeFilter] = useState("terbaru");
   const [showFilters, setShowFilters] = useState(false);
   
   // Modal states
@@ -97,6 +98,17 @@ export default function DataDesa() {
     { value: "LEGALISI", label: "Legalisasi", color: "purple" },
     { value: "SIAP", label: "Siap", color: "blue" },
     { value: "SELESAI", label: "Selesai", color: "green" }
+  ];
+
+  const pengajuanTimeOptions = [
+    { value: "terbaru", label: "Terbaru" },
+    { value: "7", label: "7 Hari Terakhir" },
+    { value: "30", label: "1 Bulan Terakhir" },
+    { value: "90", label: "3 Bulan Terakhir" },
+    { value: "180", label: "6 Bulan Terakhir" },
+    { value: "365", label: "1 Tahun Terakhir" },
+    { value: "over365", label: "Lebih dari 1 Tahun" },
+    { value: "all", label: "Semua Pengajuan" }
   ];
   
   // ==================== API CALLS ====================
@@ -161,6 +173,16 @@ export default function DataDesa() {
     fields_config: normalizeFieldsConfig(item?.fields_config),
     upload_config: normalizeUploadConfig(item?.upload_config)
   });
+
+  const normalizePengajuanItem = (item) => ({
+    ...item,
+    jenis_surat: item?.jenis_surat || {
+      id_jenis: item?.id_jenis,
+      nama_jenis: item?.nama_jenis || "-"
+    },
+    detail_fields: item?.detail_fields || [],
+    lampiran: item?.lampiran || []
+  });
   
   // Fetch dokumen publik (tanpa login)
   const fetchDokumenPublik = async () => {
@@ -201,7 +223,7 @@ export default function DataDesa() {
       const res = await axios.get(`${API_BASE_URL}/surat/pengajuan/saya`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       });
-      setPengajuanSaya(res.data?.data || []);
+      setPengajuanSaya((res.data?.data || []).map(normalizePengajuanItem));
     } catch (err) {
       console.error("Error fetching pengajuan saya:", err);
     }
@@ -424,13 +446,31 @@ export default function DataDesa() {
     if (!batasBerlaku) return false;
     return new Date() > batasBerlaku;
   };
+
+  const getDaysSincePengajuan = (item) => {
+    const tanggalPengajuan = parseDateValue(item?.tanggal_pengajuan);
+    if (!tanggalPengajuan) return null;
+    const start = new Date(tanggalPengajuan);
+    start.setHours(0, 0, 0, 0);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return Math.floor((now - start) / (1000 * 60 * 60 * 24));
+  };
   
   // Filter pengajuan
-  const filteredPengajuan = pengajuanSaya.filter(item => {
-    if (statusFilter && item.status !== statusFilter) return false;
-    if (isPengajuanExpired(item)) return false;
-    return true;
-  });
+  const filteredPengajuan = pengajuanSaya
+    .filter(item => {
+      if (statusFilter && item.status !== statusFilter) return false;
+      if (isPengajuanExpired(item)) return false;
+
+      const daysSince = getDaysSincePengajuan(item);
+      if (pengajuanTimeFilter === "all" || pengajuanTimeFilter === "terbaru") return true;
+      if (daysSince === null) return false;
+      if (pengajuanTimeFilter === "over365") return daysSince > 365;
+      return daysSince <= Number(pengajuanTimeFilter);
+    })
+    .sort((a, b) => new Date(b.tanggal_pengajuan || 0) - new Date(a.tanggal_pengajuan || 0))
+    .slice(0, pengajuanTimeFilter === "terbaru" ? 10 : undefined);
   
   // ==================== UTILITIES ====================
   
@@ -917,17 +957,32 @@ export default function DataDesa() {
               />
             ) : (
               <>
-                {/* Filter Status */}
+                {/* Filter Status dan Periode */}
                 <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <span className="text-sm font-medium text-gray-700">Filter Status:</span>
-                    <div className="flex flex-wrap gap-2">
-                      {statusOptions.map(opt => (
-                        <button key={opt.value} onClick={() => setStatusFilter(opt.value)} className={`px-3 py-1.5 rounded-full text-sm transition-all ${statusFilter === opt.value ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                          {opt.label}
-                        </button>
-                      ))}
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span className="text-sm font-medium text-gray-700">Periode Pengajuan:</span>
+                      <div className="flex flex-wrap gap-2">
+                        {pengajuanTimeOptions.map(opt => (
+                          <button key={opt.value} onClick={() => setPengajuanTimeFilter(opt.value)} className={`px-3 py-1.5 rounded-full text-sm transition-all ${pengajuanTimeFilter === opt.value ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span className="text-sm font-medium text-gray-700">Filter Status:</span>
+                      <div className="flex flex-wrap gap-2">
+                        {statusOptions.map(opt => (
+                          <button key={opt.value} onClick={() => setStatusFilter(opt.value)} className={`px-3 py-1.5 rounded-full text-sm transition-all ${statusFilter === opt.value ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Menampilkan {filteredPengajuan.length} pengajuan sesuai periode dan status yang dipilih.
+                    </p>
                   </div>
                 </div>
                 
