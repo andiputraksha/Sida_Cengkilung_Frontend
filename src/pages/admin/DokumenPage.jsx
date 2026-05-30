@@ -314,7 +314,7 @@ export default function DokumenPage() {
     const workdaysLeft = neededDate ? countBusinessDaysBetween(new Date(), neededDate) : null;
     const isOverSop = processingBusinessDays > SOP_SURAT_HARI_KERJA;
 
-    if (isOverSop && workdaysLeft !== null && workdaysLeft <= 2) {
+    if (workdaysLeft !== null && workdaysLeft <= 2) {
       return {
         level: "merah",
         label: "Prioritas",
@@ -327,7 +327,9 @@ export default function DokumenPage() {
         slaDeadline,
         processingBusinessDays,
         remainingBusinessDays: workdaysLeft,
-        reason: "SOP 3 hari kerja terlampaui dan tanggal surat dibutuhkan <= 2 hari kerja"
+        reason: isOverSop
+          ? "SOP 3 hari kerja terlampaui dan tanggal surat dibutuhkan <= 2 hari kerja"
+          : "Tanggal surat dibutuhkan <= 2 hari kerja, wajib diprioritaskan"
       };
     }
 
@@ -364,7 +366,7 @@ export default function DokumenPage() {
       remainingBusinessDays: workdaysLeft,
       reason: workdaysLeft === null
         ? "Tanggal surat dibutuhkan belum terdeteksi, ikuti antrean dasar"
-        : "Tanggal surat dibutuhkan masih lebih dari 4 hari kerja atau pengajuan masih baru"
+        : "Tanggal surat dibutuhkan masih lebih dari 4 hari kerja"
     };
   };
 
