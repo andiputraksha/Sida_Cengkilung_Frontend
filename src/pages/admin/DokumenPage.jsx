@@ -236,7 +236,7 @@ export default function DokumenPage() {
       logs: item.logs || []
     }));
 
-  const SOP_SURAT_HARI_KERJA = 5;
+  const SOP_SURAT_HARI_KERJA = 3;
   const ACTIVE_SURAT_STATUSES = ["MENUNGGU", "DRAFT", "LEGALISI", "SIAP"];
 
   const normalizePriorityText = (value) =>
@@ -263,6 +263,15 @@ export default function DokumenPage() {
     return result;
   };
 
+  const getBusinessDaysElapsed = (startDate, endDate = new Date()) => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    if (end <= start) return 0;
+    return countBusinessDaysBetween(start, end);
+  };
+
   const countBusinessDaysBetween = (startDate, endDate) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -285,7 +294,7 @@ export default function DokumenPage() {
       .join(" ");
 
   const findEventDate = (item) => {
-    const dateFieldKeywords = ["tanggal", "dewasa", "pelaksanaan", "kegiatan", "upacara", "karya"];
+    const dateFieldKeywords = ["tanggal", "dibutuhkan", "diperlukan", "deadline", "dewasa", "pelaksanaan", "kegiatan", "upacara", "karya"];
     const candidates = (item.detail_fields || []).filter((field) =>
       dateFieldKeywords.some((keyword) => normalizePriorityText(field.field_name).includes(keyword))
     );
@@ -299,65 +308,30 @@ export default function DokumenPage() {
 
   const getSuratPriority = (item) => {
     const submittedAt = parseDateValue(item.tanggal_pengajuan);
-    const deadline = submittedAt ? addBusinessDays(submittedAt, SOP_SURAT_HARI_KERJA) : null;
-    const remainingBusinessDays = deadline ? countBusinessDaysBetween(new Date(), deadline) : null;
-    const overdue = deadline ? new Date().setHours(0, 0, 0, 0) > new Date(deadline).setHours(0, 0, 0, 0) : false;
-    const jenis = normalizePriorityText(item.jenis_surat?.nama_jenis || item.nama_jenis);
-    const details = normalizePriorityText(getDetailText(item));
-    const combined = `${jenis} ${details}`;
-    const eventDate = findEventDate(item);
-    const daysToEvent = eventDate ? Math.ceil((eventDate - new Date()) / (1000 * 60 * 60 * 24)) : null;
+    const slaDeadline = submittedAt ? addBusinessDays(submittedAt, SOP_SURAT_HARI_KERJA) : null;
+    const processingBusinessDays = submittedAt ? getBusinessDaysElapsed(submittedAt) : 0;
+    const neededDate = findEventDate(item);
+    const workdaysLeft = neededDate ? countBusinessDaysBetween(new Date(), neededDate) : null;
+    const isOverSop = processingBusinessDays > SOP_SURAT_HARI_KERJA;
 
-    const urgentKeywords = ["mendesak", "darurat", "besok", "lusa", "kematian", "hukum", "klaim", "jaminan", "dispensasi"];
-    const importantKeywords = ["warisan budaya", "pawiwahan", "perkawinan", "perceraian", "sengketa", "klaim", "verifikasi", "pecalang", "menengah"];
-    const routineKeywords = ["rekomendasi umum", "aktif sebagai krama", "beasiswa", "melamar pekerjaan", "pendataan rutin", "akademisi", "penelitian", "karya rutin", "otonan", "ngabar"];
-
-    if (
-      overdue ||
-      remainingBusinessDays === 0 ||
-      remainingBusinessDays === 1 ||
-      urgentKeywords.some((keyword) => combined.includes(keyword)) ||
-      (jenis.includes("pelaksanaan karya") && daysToEvent !== null && daysToEvent <= 2)
-    ) {
+    if (isOverSop && workdaysLeft !== null && workdaysLeft <= 2) {
       return {
         level: "merah",
-        label: "Mendesak / Kritis",
+        label: "Prioritas",
         tone: "bg-red-100 text-red-800 border-red-200",
         border: "border-red-500",
         dot: "bg-red-500",
         icon: AlertTriangle,
         order: 1,
-        deadline,
-        remainingBusinessDays,
-        reason: overdue
-          ? "melewati SOP 5 hari kerja"
-          : typeof remainingBusinessDays === "number" && remainingBusinessDays <= 1
-            ? "mendekati batas SOP"
-            : "terikat waktu/kondisi mendesak"
+        deadline: neededDate,
+        slaDeadline,
+        processingBusinessDays,
+        remainingBusinessDays: workdaysLeft,
+        reason: "SOP 3 hari kerja terlampaui dan tanggal surat dibutuhkan <= 2 hari kerja"
       };
     }
 
-    if (routineKeywords.some((keyword) => combined.includes(keyword))) {
-      return {
-        level: "hijau",
-        label: "Rutin / Aman",
-        tone: "bg-green-100 text-green-800 border-green-200",
-        border: "border-green-500",
-        dot: "bg-green-500",
-        icon: CheckCircle,
-        order: 3,
-        deadline,
-        remainingBusinessDays,
-        reason: "pengajuan rutin/informatif"
-      };
-    }
-
-    if (
-      remainingBusinessDays === 2 ||
-      remainingBusinessDays === 3 ||
-      importantKeywords.some((keyword) => combined.includes(keyword)) ||
-      (jenis.includes("pelaksanaan karya") && daysToEvent !== null && daysToEvent <= 30)
-    ) {
+    if ((workdaysLeft !== null && workdaysLeft >= 3 && workdaysLeft <= 4) || isOverSop) {
       return {
         level: "kuning",
         label: "Penting",
@@ -366,9 +340,13 @@ export default function DokumenPage() {
         dot: "bg-yellow-500",
         icon: AlertCircle,
         order: 2,
-        deadline,
-        remainingBusinessDays,
-        reason: "perlu verifikasi/koordinasi"
+        deadline: neededDate,
+        slaDeadline,
+        processingBusinessDays,
+        remainingBusinessDays: workdaysLeft,
+        reason: isOverSop
+          ? "SOP 3 hari kerja sudah terlampaui, perlu segera dicicil"
+          : "Tanggal surat dibutuhkan tersisa 3-4 hari kerja"
       };
     }
 
@@ -380,9 +358,13 @@ export default function DokumenPage() {
       dot: "bg-green-500",
       icon: CheckCircle,
       order: 3,
-      deadline,
-      remainingBusinessDays,
-      reason: "pengajuan rutin"
+      deadline: neededDate,
+      slaDeadline,
+      processingBusinessDays,
+      remainingBusinessDays: workdaysLeft,
+      reason: workdaysLeft === null
+        ? "Tanggal surat dibutuhkan belum terdeteksi, ikuti antrean dasar"
+        : "Tanggal surat dibutuhkan masih lebih dari 4 hari kerja atau pengajuan masih baru"
     };
   };
 
@@ -396,10 +378,10 @@ export default function DokumenPage() {
         </span>
         <span className="text-xs text-gray-500">
           {priority.remainingBusinessDays === null
-            ? "Deadline belum tersedia"
+            ? "Tanggal dibutuhkan belum tersedia"
             : priority.remainingBusinessDays === 0
-              ? "Jatuh tempo hari ini"
-              : `${priority.remainingBusinessDays} hari kerja tersisa`}
+              ? "Dibutuhkan hari ini"
+              : `${priority.remainingBusinessDays} hari kerja menuju dibutuhkan`}
         </span>
       </div>
     );
@@ -1286,7 +1268,7 @@ export default function DokumenPage() {
       )
     },
     { 
-      header: "DEADLINE", 
+      header: "TANGGAL DIBUTUHKAN", 
       field: "deadline",
       render: (row) => (
         <div className="flex items-center gap-1.5">
@@ -1298,7 +1280,7 @@ export default function DokumenPage() {
       )
     },
     { 
-      header: "SISA HARI", 
+      header: "SISA HARI KERJA", 
       field: "hari",
       render: (row) => {
         const days = row.remainingDays;
@@ -1310,7 +1292,7 @@ export default function DokumenPage() {
         
         return (
           <span className={`text-sm ${colorClass}`}>
-            {days === 0 ? "Hari ini!" : `${days} hari`}
+            {days === 0 ? "Hari ini" : `${days} hari kerja`}
           </span>
         );
       }
@@ -1791,7 +1773,7 @@ export default function DokumenPage() {
                   <div>
                     <h3 className="font-semibold text-gray-800 text-lg">Notifikasi Prioritas Penanganan Surat</h3>
                     <p className="text-sm text-gray-600 mt-1">
-                      Sistem mengurutkan surat aktif berdasarkan SOP <span className="font-medium text-amber-600">5 hari kerja</span> (Senin-Jumat).
+                      Sistem mengurutkan surat aktif berdasarkan SOP <span className="font-medium text-amber-600">2-3 hari kerja</span> dan tanggal surat dibutuhkan (Senin-Jumat).
                     </p>
                   </div>
                 </div>

@@ -470,7 +470,7 @@ export default function DataDesa() {
       return daysSince <= Number(pengajuanTimeFilter);
     })
     .sort((a, b) => new Date(b.tanggal_pengajuan || 0) - new Date(a.tanggal_pengajuan || 0))
-    .slice(0, pengajuanTimeFilter === "terbaru" ? 10 : undefined);
+    .slice(0, pengajuanTimeFilter === "terbaru" ? 5 : undefined);
   
   // ==================== UTILITIES ====================
   
@@ -960,28 +960,35 @@ export default function DataDesa() {
                 {/* Filter Status dan Periode */}
                 <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
                   <div className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-4">
-                      <span className="text-sm font-medium text-gray-700">Periode Pengajuan:</span>
-                      <div className="flex flex-wrap gap-2">
-                        {pengajuanTimeOptions.map(opt => (
-                          <button key={opt.value} onClick={() => setPengajuanTimeFilter(opt.value)} className={`px-3 py-1.5 rounded-full text-sm transition-all ${pengajuanTimeFilter === opt.value ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                            {opt.label}
-                          </button>
-                        ))}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Periode Pengajuan</label>
+                        <select
+                          value={pengajuanTimeFilter}
+                          onChange={(e) => setPengajuanTimeFilter(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                        >
+                          {pengajuanTimeOptions.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
                       </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-4">
-                      <span className="text-sm font-medium text-gray-700">Filter Status:</span>
-                      <div className="flex flex-wrap gap-2">
-                        {statusOptions.map(opt => (
-                          <button key={opt.value} onClick={() => setStatusFilter(opt.value)} className={`px-3 py-1.5 rounded-full text-sm transition-all ${statusFilter === opt.value ? 'bg-amber-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                            {opt.label}
-                          </button>
-                        ))}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Status Surat</label>
+                        <select
+                          value={statusFilter}
+                          onChange={(e) => setStatusFilter(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                        >
+                          {statusOptions.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                     <p className="text-xs text-gray-500">
                       Menampilkan {filteredPengajuan.length} pengajuan sesuai periode dan status yang dipilih.
+                      {pengajuanTimeFilter === "terbaru" ? " Mode terbaru dibatasi 5 surat." : ""}
                     </p>
                   </div>
                 </div>
