@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import { getToken, getUser, isAuthenticated, isMasyarakat } from "@/utils/auth";
@@ -34,9 +34,85 @@ import {
   ChevronUp,
   ListChecks,
   FileSignature,
-  LogIn
+  LogIn,
+  ArrowUp,
+  ArrowDown,
+  ChevronsLeft,
+  ChevronsRight,
+  ChevronLeft,
+  Info
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+
+// ==================== DATATABLES CSS STYLES ====================
+const dataTablesStyles = `
+  .status-datatable {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .status-datatable thead th {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    padding: 14px 16px;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #495057;
+    border-bottom: 2px solid #dee2e6;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s ease;
+    white-space: nowrap;
+  }
+  .status-datatable thead th:hover {
+    background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+  }
+  .status-datatable thead th.no-sort {
+    cursor: default;
+  }
+  .status-datatable thead th.no-sort:hover {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  }
+  .status-datatable tbody tr {
+    transition: all 0.2s ease;
+  }
+  .status-datatable tbody tr:hover {
+    background-color: #f8f9fa;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .status-datatable tbody td {
+    padding: 12px 16px;
+    border-bottom: 1px solid #f1f3f5;
+    vertical-align: middle;
+  }
+  .status-datatable .status-row-MENUNGGU {
+    border-left: 4px solid #f97316;
+  }
+  .status-datatable .status-row-DRAFT {
+    border-left: 4px solid #6b7280;
+  }
+  .status-datatable .status-row-LEGALISI {
+    border-left: 4px solid #a855f7;
+  }
+  .status-datatable .status-row-SIAP {
+    border-left: 4px solid #3b82f6;
+  }
+  .status-datatable .status-row-SELESAI {
+    border-left: 4px solid #22c55e;
+  }
+  @media (max-width: 768px) {
+    .status-datatable thead th,
+    .status-datatable tbody td {
+      padding: 10px 8px;
+      font-size: 0.7rem;
+    }
+  }
+`;
 
 export default function DataDesa() {
   const DEFAULT_UPLOAD_CONFIG = {
@@ -63,8 +139,16 @@ export default function DataDesa() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterJenis, setFilterJenis] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [pengajuanTimeFilter, setPengajuanTimeFilter] = useState("terbaru");
+  const [pengajuanTimeFilter, setPengajuanTimeFilter] = useState("all"); // DEFAULT: Semua Pengajuan
   const [showFilters, setShowFilters] = useState(false);
+  
+  // ==================== DATATABLE STATE UNTUK STATUS SURAT ====================
+  const [statusSearchTerm, setStatusSearchTerm] = useState("");
+  const [statusSortField, setStatusSortField] = useState("tanggal");
+  const [statusSortDirection, setStatusSortDirection] = useState("desc");
+  const [statusCurrentPage, setStatusCurrentPage] = useState(1);
+  const [statusItemsPerPage, setStatusItemsPerPage] = useState(10);
+  const [statusFilterJenisSurat, setStatusFilterJenisSurat] = useState("");
   
   // Modal states
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
@@ -101,14 +185,13 @@ export default function DataDesa() {
   ];
 
   const pengajuanTimeOptions = [
-    { value: "terbaru", label: "Terbaru" },
+    { value: "all", label: "Semua Pengajuan" },
     { value: "7", label: "7 Hari Terakhir" },
     { value: "30", label: "1 Bulan Terakhir" },
     { value: "90", label: "3 Bulan Terakhir" },
     { value: "180", label: "6 Bulan Terakhir" },
     { value: "365", label: "1 Tahun Terakhir" },
-    { value: "over365", label: "Lebih dari 1 Tahun" },
-    { value: "all", label: "Semua Pengajuan" }
+    { value: "over365", label: "Lebih dari 1 Tahun" }
   ];
   
   // ==================== API CALLS ====================
@@ -188,10 +271,8 @@ export default function DataDesa() {
   const fetchDokumenPublik = async () => {
     try {
       setLoading(true);
-      // Endpoint publik harus dipanggil tanpa Authorization agar tidak gagal karena token expired/invalid
       const res = await axios.get(`${API_BASE_URL}/dokumen/publik`);
       const data = res.data?.success ? res.data.data : [];
-      // Hanya tampilkan dokumen dengan status aktif
       setDokumen(data.filter(d => d.status_dokumen === 'aktif'));
     } catch (err) {
       console.error("Error fetching dokumen:", err);
@@ -262,9 +343,7 @@ export default function DataDesa() {
       fileInputRef.current.value = "";
     }
     
-    // Set upload config
     setUploadConfig(jenis?.upload_config || { ...DEFAULT_UPLOAD_CONFIG });
-    
     setSubmitError("");
   };
   
@@ -277,14 +356,12 @@ export default function DataDesa() {
     const config = uploadConfig || DEFAULT_UPLOAD_CONFIG;
     if (files.length === 0) return;
     
-    // Validasi jumlah file
     if (lampiranFiles.length + files.length > config.max_files) {
       setSubmitError(`Maksimal ${config.max_files} file lampiran`);
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
     
-    // Validasi ukuran dan tiap file
     for (const file of files) {
       if (file.size > config.max_size_mb * 1024 * 1024) {
         setSubmitError(`Ukuran file ${file.name} melebihi ${config.max_size_mb}MB`);
@@ -315,7 +392,6 @@ export default function DataDesa() {
       return;
     }
     
-    // Validasi field wajib
     const fields = selectedJenisSurat.fields_config?.fields || [];
     for (const field of fields) {
       const value = formFields[field.name];
@@ -334,14 +410,12 @@ export default function DataDesa() {
       const formData = new FormData();
       formData.append("id_jenis", selectedJenisSurat.id_jenis);
       
-      // Kirim detail fields sebagai JSON
       const detailFields = fields.map((field) => ({
         name: field.name,
         value: formFields[field.name] ?? ""
       }));
       formData.append("detail_fields", JSON.stringify(detailFields));
       
-      // Upload lampiran
       lampiranFiles.forEach(file => {
         formData.append("lampiran", file);
       });
@@ -358,16 +432,12 @@ export default function DataDesa() {
       });
       
       setSubmitSuccess(true);
-      
-      // Reset form
       setSelectedJenisSurat(null);
       setFormFields({});
       setLampiranFiles([]);
       
-      // Refresh data
       await fetchPengajuanSaya();
       
-      // Redirect ke tab status surat setelah 2 detik
       setTimeout(() => {
         setSubmitSuccess(false);
         setActiveTab("status");
@@ -457,20 +527,133 @@ export default function DataDesa() {
     return Math.floor((now - start) / (1000 * 60 * 60 * 24));
   };
   
-  // Filter pengajuan
-  const filteredPengajuan = pengajuanSaya
-    .filter(item => {
-      if (statusFilter && item.status !== statusFilter) return false;
-      if (isPengajuanExpired(item)) return false;
+  // ==================== DATATABLE LOGIC UNTUK STATUS SURAT ====================
+  
+  // Data mentah untuk DataTable
+  const allStatusData = useMemo(() => {
+    return pengajuanSaya
+      .filter(item => !isPengajuanExpired(item))
+      .map(item => {
+        const alasanField = item.detail_fields?.find(
+          f => f.field_name === 'alasan_dispensasi' || 
+               f.field_name === 'tujuan_rekomendasi' || 
+               f.field_name === 'sejarah_singkat' || 
+               f.field_name === 'keterangan'
+        );
+        
+        return {
+          ...item,
+          _alasan: alasanField?.field_value || item.detail_fields?.[0]?.field_value || '-',
+          _jenisSuratNama: item.jenis_surat?.nama_jenis || item.nama_jenis || '-',
+          _tanggalPengajuan: parseDateValue(item.tanggal_pengajuan),
+          _batasBerlaku: getBatasBerlakuSurat(item),
+          _daysSince: getDaysSincePengajuan(item),
+          _id: item.id_pengajuan
+        };
+      });
+  }, [pengajuanSaya]);
 
-      const daysSince = getDaysSincePengajuan(item);
-      if (pengajuanTimeFilter === "all" || pengajuanTimeFilter === "terbaru") return true;
-      if (daysSince === null) return false;
-      if (pengajuanTimeFilter === "over365") return daysSince > 365;
-      return daysSince <= Number(pengajuanTimeFilter);
-    })
-    .sort((a, b) => new Date(b.tanggal_pengajuan || 0) - new Date(a.tanggal_pengajuan || 0))
-    .slice(0, pengajuanTimeFilter === "terbaru" ? 5 : undefined);
+  // Filter, search, sort data
+  const filteredStatusData = useMemo(() => {
+    let data = [...allStatusData];
+    
+    // Filter periode pengajuan
+    if (pengajuanTimeFilter !== "all") {
+      data = data.filter(item => {
+        const daysSince = item._daysSince;
+        if (daysSince === null) return false;
+        if (pengajuanTimeFilter === "over365") return daysSince > 365;
+        return daysSince <= Number(pengajuanTimeFilter);
+      });
+    }
+    
+    // Filter status
+    if (statusFilter) {
+      data = data.filter(item => item.status === statusFilter);
+    }
+    
+    // Filter jenis surat
+    if (statusFilterJenisSurat) {
+      data = data.filter(item => 
+        item.jenis_surat?.id_jenis == statusFilterJenisSurat ||
+        item.id_jenis == statusFilterJenisSurat
+      );
+    }
+    
+    // Pencarian
+    if (statusSearchTerm) {
+      const search = statusSearchTerm.toLowerCase();
+      data = data.filter(item => 
+        item._jenisSuratNama.toLowerCase().includes(search) ||
+        item._alasan.toLowerCase().includes(search) ||
+        (item.no_surat && item.no_surat.toLowerCase().includes(search)) ||
+        (item.catatan_admin && item.catatan_admin.toLowerCase().includes(search))
+      );
+    }
+    
+    // Sorting
+    data.sort((a, b) => {
+      let comparison = 0;
+      switch (statusSortField) {
+        case "tanggal":
+          comparison = (a._tanggalPengajuan?.getTime() || 0) - (b._tanggalPengajuan?.getTime() || 0);
+          break;
+        case "jenis":
+          comparison = a._jenisSuratNama.localeCompare(b._jenisSuratNama);
+          break;
+        case "status":
+          comparison = a.status.localeCompare(b.status);
+          break;
+        case "no_surat":
+          comparison = (a.no_surat || "").localeCompare(b.no_surat || "");
+          break;
+        default:
+          comparison = (a._tanggalPengajuan?.getTime() || 0) - (b._tanggalPengajuan?.getTime() || 0);
+      }
+      return statusSortDirection === "asc" ? comparison : -comparison;
+    });
+    
+    return data;
+  }, [allStatusData, pengajuanTimeFilter, statusFilter, statusFilterJenisSurat, statusSearchTerm, statusSortField, statusSortDirection]);
+
+  // Pagination
+  const statusTotalItems = filteredStatusData.length;
+  const statusTotalPages = Math.ceil(statusTotalItems / statusItemsPerPage);
+  const statusStartIndex = (statusCurrentPage - 1) * statusItemsPerPage;
+  const statusEndIndex = statusStartIndex + statusItemsPerPage;
+  const statusCurrentItems = filteredStatusData.slice(statusStartIndex, statusEndIndex);
+
+  // Reset pagination saat filter berubah
+  useEffect(() => {
+    setStatusCurrentPage(1);
+  }, [pengajuanTimeFilter, statusFilter, statusFilterJenisSurat, statusSearchTerm, statusItemsPerPage]);
+
+  const handleStatusSort = (field) => {
+    if (statusSortField === field) {
+      setStatusSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setStatusSortField(field);
+      setStatusSortDirection("asc");
+    }
+    setStatusCurrentPage(1);
+  };
+
+  const getSortIcon = (field) => {
+    if (statusSortField !== field) {
+      return <ChevronDown className="w-4 h-4 text-gray-400" />;
+    }
+    return statusSortDirection === "asc" 
+      ? <ChevronUp className="w-4 h-4 text-amber-600" />
+      : <ChevronDown className="w-4 h-4 text-amber-600" />;
+  };
+
+  const handleStatusPageChange = (page) => {
+    setStatusCurrentPage(page);
+    const tableElement = document.getElementById('status-datatable-container');
+    if (tableElement) {
+      tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
   
   // ==================== UTILITIES ====================
   
@@ -535,7 +718,7 @@ export default function DataDesa() {
       .join(" ");
   };
   
-  // Render dynamic form fields berdasarkan konfigurasi JSON
+  // Render dynamic form fields
   const renderDynamicField = (field, value, onChange) => {
     const commonClass = "w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent";
     
@@ -586,7 +769,7 @@ export default function DataDesa() {
             required={field.required}
           />
         );
-      default: // text
+      default:
         return (
           <input
             type="text"
@@ -648,7 +831,7 @@ export default function DataDesa() {
     );
   };
   
-  // Komponen pesan login untuk tab yang memerlukan autentikasi
+  // Komponen pesan login
   const LoginRequiredMessage = ({ title, description }) => (
     <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
       <div className="w-24 h-24 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -664,9 +847,6 @@ export default function DataDesa() {
         Login Sekarang
         <ChevronRight className="w-4 h-4" />
       </Link>
-      {/* <p className="text-sm text-gray-500 mt-4">
-        Belum punya akun? <Link to="/register" className="text-amber-600 hover:underline">Daftar disini</Link>
-      </p> */}
     </div>
   );
   
@@ -704,6 +884,9 @@ export default function DataDesa() {
   
   return (
     <div className="bg-gradient-to-b from-gray-50 to-white min-h-screen">
+      {/* Inject DataTables Styles */}
+      <style>{dataTablesStyles}</style>
+      
       {/* Hero Section */}
       <div className="relative text-white overflow-hidden">
         <div className="absolute inset-0">
@@ -740,7 +923,7 @@ export default function DataDesa() {
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 py-12">
         
-        {/* Tab Navigation - 3 TABS */}
+        {/* Tab Navigation */}
         <div className="border-b border-gray-200 mb-8">
           <nav className="flex gap-6">
             <button onClick={() => { setActiveTab("dokumen"); setSearchTerm(""); setFilterJenis(""); }}
@@ -751,7 +934,7 @@ export default function DataDesa() {
               className={`pb-3 px-1 flex items-center gap-2 transition-all ${activeTab === "ajukan" ? "border-b-2 border-amber-600 text-amber-600 font-medium" : "text-gray-500 hover:text-gray-700"}`}>
               <Send className="w-4 h-4" /> Ajukan Surat
             </button>
-            <button onClick={() => { setActiveTab("status"); setStatusFilter(""); }}
+            <button onClick={() => { setActiveTab("status"); setStatusFilter(""); setPengajuanTimeFilter("all"); }}
               className={`pb-3 px-1 flex items-center gap-2 transition-all ${activeTab === "status" ? "border-b-2 border-amber-600 text-amber-600 font-medium" : "text-gray-500 hover:text-gray-700"}`}>
               <Clock className="w-4 h-4" /> Status Surat
               {isLoggedIn && pengajuanSaya.filter(p => p.status === 'MENUNGGU').length > 0 && (
@@ -761,10 +944,9 @@ export default function DataDesa() {
           </nav>
         </div>
         
-        {/* ==================== TAB 1: DOKUMEN DESA (Bisa Diakses Tanpa Login) ==================== */}
+        {/* ==================== TAB 1: DOKUMEN DESA ==================== */}
         {activeTab === "dokumen" && (
           <>
-            {/* Search & Filter */}
             <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
               <div className="flex items-center justify-between mb-4">
                 <button onClick={() => setShowFilters(!showFilters)} className="flex items-center gap-2 text-gray-700 hover:text-amber-600">
@@ -794,7 +976,6 @@ export default function DataDesa() {
               </AnimatePresence>
             </div>
             
-            {/* Grid Dokumen */}
             {filteredDokumen.length > 0 ? (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredDokumen.map((item, index) => (
@@ -828,7 +1009,7 @@ export default function DataDesa() {
           </>
         )}
         
-        {/* ==================== TAB 2: AJUKAN SURAT (WAJIB LOGIN) ==================== */}
+        {/* ==================== TAB 2: AJUKAN SURAT ==================== */}
         {activeTab === "ajukan" && (
           <>
             {!isLoggedIn ? (
@@ -855,7 +1036,6 @@ export default function DataDesa() {
                     <h2 className="text-2xl font-bold text-gray-800 mb-2">Ajukan Surat Adat</h2>
                     <p className="text-gray-600 mb-6">Silakan pilih jenis surat dan isi form di bawah ini</p>
                     
-                    {/* Pilih Jenis Surat */}
                     <div className="mb-6">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Jenis Surat <span className="text-red-500">*</span></label>
                       <select className="w-full md:w-1/2 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500" value={selectedJenisSurat?.id_jenis || ""} onChange={(e) => handleJenisSuratChange(e.target.value)}>
@@ -866,14 +1046,12 @@ export default function DataDesa() {
                     
                     {selectedJenisSurat && (
                       <form onSubmit={handleAjukanSurat} className="space-y-6">
-                        {/* Deskripsi jenis surat */}
                         {selectedJenisSurat.deskripsi && (
                           <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
                             <p className="text-sm text-amber-800">{selectedJenisSurat.deskripsi}</p>
                           </div>
                         )}
                         
-                        {/* Dynamic Fields */}
                         <div className="space-y-4">
                           <h3 className="font-semibold text-gray-800">Data Pengajuan</h3>
                           {selectedJenisSurat.fields_config?.fields?.map((field, idx) => (
@@ -891,7 +1069,6 @@ export default function DataDesa() {
                           )}
                         </div>
                         
-                        {/* Upload Bukti Pendukung */}
                         {uploadConfig.allow_upload && (
                           <div className="space-y-4">
                             <h3 className="font-semibold text-gray-800">Upload Bukti Pendukung (Opsional)</h3>
@@ -942,7 +1119,7 @@ export default function DataDesa() {
           </>
         )}
         
-        {/* ==================== TAB 3: STATUS SURAT (WAJIB LOGIN) ==================== */}
+        {/* ==================== TAB 3: STATUS SURAT DENGAN DATATABLE ==================== */}
         {activeTab === "status" && (
           <>
             {!isLoggedIn ? (
@@ -957,95 +1134,375 @@ export default function DataDesa() {
               />
             ) : (
               <>
-                {/* Filter Status dan Periode */}
-                <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Periode Pengajuan</label>
-                        <select
-                          value={pengajuanTimeFilter}
-                          onChange={(e) => setPengajuanTimeFilter(e.target.value)}
-                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                        >
-                          {pengajuanTimeOptions.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
+                {/* Summary Stats Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                  {statusOptions.filter(s => s.value !== "").map((s, idx) => (
+                    <motion.div
+                      key={s.value}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.05 }}
+                      className={`bg-white rounded-xl shadow-md p-4 border-l-4 cursor-pointer hover:shadow-lg transition-all ${
+                        s.color === 'orange' ? 'border-orange-500' : 
+                        s.color === 'gray' ? 'border-gray-500' : 
+                        s.color === 'purple' ? 'border-purple-500' : 
+                        s.color === 'blue' ? 'border-blue-500' : 
+                        'border-green-500'
+                      } ${statusFilter === s.value ? 'ring-2 ring-amber-400 shadow-lg scale-105' : ''}`}
+                      onClick={() => setStatusFilter(statusFilter === s.value ? "" : s.value)}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">{s.label}</p>
+                          <p className="text-2xl font-bold text-gray-800">
+                            {allStatusData.filter(item => item.status === s.value).length}
+                          </p>
+                        </div>
+                        <div className={`w-8 h-8 bg-${s.color}-100 rounded-lg flex items-center justify-center`}>
+                          {s.value === 'MENUNGGU' && <Clock className="w-4 h-4 text-orange-600" />}
+                          {s.value === 'DRAFT' && <FileText className="w-4 h-4 text-gray-600" />}
+                          {s.value === 'LEGALISI' && <FileCheck className="w-4 h-4 text-purple-600" />}
+                          {s.value === 'SIAP' && <CheckCircle className="w-4 h-4 text-blue-600" />}
+                          {s.value === 'SELESAI' && <CheckCircle className="w-4 h-4 text-green-600" />}
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Status Surat</label>
-                        <select
-                          value={statusFilter}
-                          onChange={(e) => setStatusFilter(e.target.value)}
-                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                        >
-                          {statusOptions.map(opt => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
-                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+
+                {/* Filter & Search Bar */}
+                <div className="bg-white rounded-xl shadow-lg p-6 mb-6" id="status-datatable-container">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                    {/* Pencarian */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Cari jenis surat, alasan, no surat..."
+                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                        value={statusSearchTerm}
+                        onChange={(e) => setStatusSearchTerm(e.target.value)}
+                      />
                     </div>
-                    <p className="text-xs text-gray-500">
-                      Menampilkan {filteredPengajuan.length} pengajuan sesuai periode dan status yang dipilih.
-                      {pengajuanTimeFilter === "terbaru" ? " Mode terbaru dibatasi 5 surat." : ""}
+                    
+                    {/* Filter Periode */}
+                    <div>
+                      <select
+                        value={pengajuanTimeFilter}
+                        onChange={(e) => setPengajuanTimeFilter(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                      >
+                        {pengajuanTimeOptions.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    {/* Filter Jenis Surat */}
+                    <div>
+                      <select
+                        value={statusFilterJenisSurat}
+                        onChange={(e) => setStatusFilterJenisSurat(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                      >
+                        <option value="">Semua Jenis Surat</option>
+                        {jenisSurat.map(j => (
+                          <option key={j.id_jenis} value={j.id_jenis}>{j.nama_jenis}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    {/* Items per page */}
+                    <div>
+                      <select
+                        value={statusItemsPerPage}
+                        onChange={(e) => {
+                          setStatusItemsPerPage(Number(e.target.value));
+                          setStatusCurrentPage(1);
+                        }}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                      >
+                        <option value="5">5 data per halaman</option>
+                        <option value="10">10 data per halaman</option>
+                        <option value="25">25 data per halaman</option>
+                        <option value="50">50 data per halaman</option>
+                        <option value="100">100 data per halaman</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  {/* Info & Reset */}
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-600">
+                      Menampilkan <span className="font-semibold text-amber-600">{statusTotalItems}</span> pengajuan
+                      {(pengajuanTimeFilter !== "all" || statusFilter || statusFilterJenisSurat || statusSearchTerm) && (
+                        <span> (difilter dari {allStatusData.length} total)</span>
+                      )}
                     </p>
+                    
+                    {(pengajuanTimeFilter !== "all" || statusFilter || statusFilterJenisSurat || statusSearchTerm) && (
+                      <button
+                        onClick={() => {
+                          setPengajuanTimeFilter("all");
+                          setStatusFilter("");
+                          setStatusFilterJenisSurat("");
+                          setStatusSearchTerm("");
+                          setStatusCurrentPage(1);
+                        }}
+                        className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                        Reset Filter
+                      </button>
+                    )}
                   </div>
                 </div>
                 
-                {/* List Kartu Status */}
-                {filteredPengajuan.length > 0 ? (
-                  <div className="space-y-4">
-                    {filteredPengajuan.map((item, idx) => {
-                      const alasanField = item.detail_fields?.find(f => f.field_name === 'alasan_dispensasi' || f.field_name === 'tujuan_rekomendasi' || f.field_name === 'sejarah_singkat' || f.field_name === 'keterangan');
-                      const alasan = alasanField?.field_value || item.detail_fields?.[0]?.field_value || '-';
-                      const batasBerlaku = getBatasBerlakuSurat(item);
-                      
-                      return (
-                        <motion.div key={item.id_pengajuan} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }} className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-amber-500 hover:shadow-xl transition-all">
-                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                            <div className="flex items-start gap-4 flex-1">
-                              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">{getStatusIcon(item.status)}</div>
-                              <div className="flex-1">
-                                <div className="flex flex-wrap items-center gap-2 mb-2">
-                                  <h3 className="font-bold text-gray-800">{item.jenis_surat?.nama_jenis || '-'}</h3>
-                                  {getStatusBadge(item.status)}
-                                </div>
-                                <p className="text-sm text-gray-600 line-clamp-2 mb-2">{alasan}</p>
-                                <div className="flex items-center gap-3 text-xs text-gray-500">
-                                  <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDate(item.tanggal_pengajuan)}</span>
-                                  {item.no_surat && <span className="flex items-center gap-1"><FileText className="w-3 h-3" /> No. {item.no_surat}</span>}
-                                </div>
-                                {item.status === "SELESAI" && item.file_final && batasBerlaku && (
-                                  <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 inline-flex px-2 py-1 rounded-md">
-                                    Surat berlaku 3 hari sampai {formatDateTime(batasBerlaku)}. Disarankan segera download sebelum masa berlaku habis.
-                                  </p>
-                                )}
+                {/* DataTable */}
+                {statusCurrentItems.length > 0 ? (
+                  <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="status-datatable">
+                        <thead>
+                          <tr>
+                            <th onClick={() => handleStatusSort("tanggal")} className="w-[120px]">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-3.5 h-3.5" />
+                                Tanggal
+                                {getSortIcon("tanggal")}
                               </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button onClick={() => handleDetailPengajuan(item)} className="px-4 py-2 border border-amber-600 text-amber-600 rounded-lg hover:bg-amber-50 transition-colors">Lihat Detail</button>
-                              {item.status === "SELESAI" && item.file_final && (
-                                <button onClick={() => handleDownloadSurat(item.id_pengajuan, `surat_${item.id_pengajuan}.pdf`)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"><Download className="w-4 h-4" /> Download</button>
-                              )}
-                            </div>
+                            </th>
+                            <th onClick={() => handleStatusSort("jenis")}>
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-3.5 h-3.5" />
+                                Jenis Surat
+                                {getSortIcon("jenis")}
+                              </div>
+                            </th>
+                            {/* <th className="no-sort">
+                              <div className="flex items-center gap-2">
+                                <Info className="w-3.5 h-3.5" />
+                                Alasan / Keterangan
+                              </div>
+                            </th> */}
+                            <th onClick={() => handleStatusSort("status")} className="w-[120px]">
+                              <div className="flex items-center gap-2">
+                                <ListChecks className="w-3.5 h-3.5" />
+                                Status
+                                {getSortIcon("status")}
+                              </div>
+                            </th>
+                            {/* <th onClick={() => handleStatusSort("no_surat")} className="w-[130px]">
+                              <div className="flex items-center gap-2">
+                                <FileSignature className="w-3.5 h-3.5" />
+                                No. Surat
+                                {getSortIcon("no_surat")}
+                              </div>
+                            </th> */}
+                            {/* <th className="no-sort w-[160px]">
+                              <div className="flex items-center gap-2">
+                                <Clock className="w-3.5 h-3.5" />
+                                Info Berlaku
+                              </div>
+                            </th> */}
+                            <th className="no-sort w-[200px] text-center">
+                              Aksi
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statusCurrentItems.map((item, idx) => (
+                            <motion.tr
+                              key={item._id}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: idx * 0.02 }}
+                              className={`status-row-${item.status}`}
+                            >
+                              <td>
+                                <div className="flex items-center gap-1.5">
+                                  <Calendar className="w-3.5 h-3.5 text-gray-500" />
+                                  <span className="text-sm text-gray-700">
+                                    {formatDate(item.tanggal_pengajuan)}
+                                  </span>
+                                </div>
+                              </td>
+                              <td>
+                                <span className="font-medium text-gray-800 text-sm">
+                                  {item._jenisSuratNama}
+                                </span>
+                              </td>
+                              {/* <td>
+                                <span className="text-sm text-gray-600 line-clamp-2">
+                                  {item._alasan}
+                                </span>
+                              </td> */}
+                              <td>
+                                {getStatusBadge(item.status)}
+                              </td>
+                              {/* <td>
+                                <span className="text-sm text-gray-700">
+                                  {item.no_surat || '-'}
+                                </span>
+                              </td> */}
+                              {/* <td>
+                                {item.status === "SELESAI" && item.file_final && item._batasBerlaku ? (
+                                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md inline-flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    s/d {formatDate(item._batasBerlaku)}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-gray-400">-</span>
+                                )}
+                              </td> */}
+                              <td>
+                                <div className="flex items-center justify-center gap-2">
+                                  <button
+                                    onClick={() => handleDetailPengajuan(item)}
+                                    className="px-3 py-1.5 border border-amber-600 text-amber-600 rounded-lg text-sm hover:bg-amber-50 transition-colors flex items-center gap-1"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                    Detail
+                                  </button>
+                                  {item.status === "SELESAI" && item.file_final && (
+                                    <button
+                                      onClick={() => handleDownloadSurat(item.id_pengajuan, `surat_${item.id_pengajuan}.pdf`)}
+                                      className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 transition-colors flex items-center gap-1"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                      Unduh
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </motion.tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination */}
+                    {statusTotalItems > 0 && (
+                      <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <span>
+                              Menampilkan {statusTotalItems === 0 ? 0 : statusStartIndex + 1} - {Math.min(statusEndIndex, statusTotalItems)} dari {statusTotalItems} data
+                            </span>
                           </div>
-                      <div className="mt-4 pt-4 border-t">
-                        <div className="mb-3 text-sm font-medium text-gray-700">
-                          Progres Pengajuan: {item.jenis_surat?.nama_jenis || item.nama_jenis || "Surat"}
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleStatusPageChange(1)}
+                              disabled={statusCurrentPage === 1}
+                              className={`p-2 rounded-lg transition-colors ${
+                                statusCurrentPage === 1
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-gray-600 hover:bg-gray-200'
+                              }`}
+                            >
+                              <ChevronsLeft className="w-5 h-5" />
+                            </button>
+                            
+                            <button
+                              onClick={() => handleStatusPageChange(statusCurrentPage - 1)}
+                              disabled={statusCurrentPage === 1}
+                              className={`p-2 rounded-lg transition-colors ${
+                                statusCurrentPage === 1
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-gray-600 hover:bg-gray-200'
+                              }`}
+                            >
+                              <ChevronLeft className="w-5 h-5" />
+                            </button>
+
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: Math.min(5, statusTotalPages) }, (_, i) => {
+                                let pageNum;
+                                if (statusTotalPages <= 5) {
+                                  pageNum = i + 1;
+                                } else if (statusCurrentPage <= 3) {
+                                  pageNum = i + 1;
+                                } else if (statusCurrentPage >= statusTotalPages - 2) {
+                                  pageNum = statusTotalPages - 4 + i;
+                                } else {
+                                  pageNum = statusCurrentPage - 2 + i;
+                                }
+                                
+                                return (
+                                  <button
+                                    key={pageNum}
+                                    onClick={() => handleStatusPageChange(pageNum)}
+                                    className={`w-10 h-10 rounded-lg font-medium transition-colors ${
+                                      statusCurrentPage === pageNum
+                                        ? 'bg-amber-600 text-white shadow-md'
+                                        : 'text-gray-600 hover:bg-gray-200'
+                                    }`}
+                                  >
+                                    {pageNum}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <button
+                              onClick={() => handleStatusPageChange(statusCurrentPage + 1)}
+                              disabled={statusCurrentPage === statusTotalPages}
+                              className={`p-2 rounded-lg transition-colors ${
+                                statusCurrentPage === statusTotalPages
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-gray-600 hover:bg-gray-200'
+                              }`}
+                            >
+                              <ChevronRight className="w-5 h-5" />
+                            </button>
+
+                            <button
+                              onClick={() => handleStatusPageChange(statusTotalPages)}
+                              disabled={statusCurrentPage === statusTotalPages}
+                              className={`p-2 rounded-lg transition-colors ${
+                                statusCurrentPage === statusTotalPages
+                                  ? 'text-gray-400 cursor-not-allowed'
+                                  : 'text-gray-600 hover:bg-gray-200'
+                              }`}
+                            >
+                              <ChevronsRight className="w-5 h-5" />
+                            </button>
+                          </div>
                         </div>
-                        <StatusTimeline currentStatus={item.status} />
                       </div>
-                    </motion.div>
-                  );
-                })}
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-16 bg-white rounded-2xl shadow-lg">
-                    <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6"><FileText className="w-12 h-12 text-gray-400" /></div>
-                    <h3 className="text-xl font-bold text-gray-700 mb-2">Belum Ada Pengajuan</h3>
-                    <p className="text-gray-500">Anda belum pernah mengajukan surat. Silakan ajukan surat di tab "Ajukan Surat".</p>
-                    <button onClick={() => setActiveTab("ajukan")} className="mt-4 px-6 py-2 bg-amber-600 text-white rounded-lg">Ajukan Surat Sekarang</button>
+                    <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <FileText className="w-12 h-12 text-gray-400" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-700 mb-2">
+                      {allStatusData.length === 0 ? "Belum Ada Pengajuan" : "Tidak Ada Data Sesuai Filter"}
+                    </h3>
+                    <p className="text-gray-500">
+                      {allStatusData.length === 0 
+                        ? "Anda belum pernah mengajukan surat. Silakan ajukan surat di tab \"Ajukan Surat\"." 
+                        : "Coba ubah filter atau periode pencarian untuk melihat data lainnya."}
+                    </p>
+                    {allStatusData.length === 0 ? (
+                      <button onClick={() => setActiveTab("ajukan")} className="mt-4 px-6 py-2 bg-amber-600 text-white rounded-lg">
+                        Ajukan Surat Sekarang
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setPengajuanTimeFilter("all");
+                          setStatusFilter("");
+                          setStatusFilterJenisSurat("");
+                          setStatusSearchTerm("");
+                        }}
+                        className="mt-4 px-6 py-2 border border-amber-600 text-amber-600 rounded-lg hover:bg-amber-50 transition-colors"
+                      >
+                        Reset Filter
+                      </button>
+                    )}
                   </div>
                 )}
               </>
@@ -1054,7 +1511,7 @@ export default function DataDesa() {
         )}
       </div>
       
-      {/* ==================== MODAL PREVIEW DOKUMEN (Tanpa Download) ==================== */}
+      {/* ==================== MODAL PREVIEW DOKUMEN ==================== */}
       <AnimatePresence>
         {isPreviewModalOpen && selectedDokumen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setIsPreviewModalOpen(false)}>
@@ -1073,7 +1530,7 @@ export default function DataDesa() {
         )}
       </AnimatePresence>
       
-      {/* ==================== MODAL DETAIL SURAT (Masyarakat) ==================== */}
+      {/* ==================== MODAL DETAIL SURAT ==================== */}
       <AnimatePresence>
         {isDetailModalOpen && selectedPengajuan && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto" onClick={() => setIsDetailModalOpen(false)}>
