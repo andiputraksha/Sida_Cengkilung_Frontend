@@ -31,6 +31,12 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 
 const API_URL = `${API_BASE_URL}/konten`;
+const compareByNumber = (a, b, key, direction = 'asc') => {
+  const aValue = Number(a?.[key] ?? 0);
+  const bValue = Number(b?.[key] ?? 0);
+  return direction === 'asc' ? aValue - bValue : bValue - aValue;
+};
+
 const toDateTimeLocalValue = (value) => {
   if (!value) return "";
   const date = new Date(value);
@@ -73,19 +79,24 @@ export default function KontenPage() {
 
   // Fetch semua konten untuk admin
   const fetchKontenAdmin = async () => {
-    try {
-      setLoading(true);
-      const res = await axios.get(`${API_URL}/admin/semua`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setKonten(res.data.data || []);
-    } catch (error) {
-      console.error("Error fetching konten:", error);
-      alert("Gagal memuat data konten");
-    } finally {
-      setLoading(false);
-    }
-  };
+  try {
+    setLoading(true);
+    const res = await axios.get(`${API_URL}/admin/semua`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    
+    const sortedData = [...(res.data.data || [])].sort((a, b) =>
+      compareByNumber(a, b, 'id_konten')
+    );
+    
+    setKonten(sortedData);
+  } catch (error) {
+    console.error("Error fetching konten:", error);
+    alert("Gagal memuat data konten");
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Fetch kategori konten
   const fetchKategori = async () => {
@@ -183,6 +194,11 @@ export default function KontenPage() {
     }
   };
 
+  const [sortConfig, setSortConfig] = useState({
+    key: 'id_konten',
+    direction: 'asc'
+  });
+
   const handleEdit = (item) => {
     setForm({
       judul: item.judul,
@@ -274,8 +290,41 @@ export default function KontenPage() {
     );
   };
 
-  // Filter konten
-  const filteredKonten = konten.filter(item => {
+  // Fungsi untuk sorting data
+const sortData = (data, config) => {
+  if (!config.key) return data;
+  
+  return [...data].sort((a, b) => {
+    if (config.key === 'id_konten') {
+      return compareByNumber(a, b, config.key, config.direction);
+    }
+
+    let aValue = a[config.key];
+    let bValue = b[config.key];
+    
+    // Handle date values
+    if (config.key.includes('tanggal') || config.key.includes('created') || config.key.includes('updated')) {
+      aValue = new Date(aValue).getTime();
+      bValue = new Date(bValue).getTime();
+    }
+    
+    // Handle null/undefined values
+    if (aValue == null) return 1;
+    if (bValue == null) return -1;
+    
+    if (aValue < bValue) {
+      return config.direction === 'asc' ? -1 : 1;
+    }
+    if (aValue > bValue) {
+      return config.direction === 'asc' ? 1 : -1;
+    }
+    return compareByNumber(a, b, 'id_konten');
+  });
+};
+
+  /// Filter dan sort konten
+const filteredAndSortedKonten = sortData(
+  konten.filter(item => {
     if (filter.status !== "semua" && item.status_konten !== filter.status) return false;
     if (filter.kategori && item.id_kategori_konten != filter.kategori) return false;
     if (filter.search) {
@@ -287,14 +336,24 @@ export default function KontenPage() {
       );
     }
     return true;
-  });
+  }),
+  sortConfig
+);
+
+
+const handleSort = (key) => {
+  setSortConfig(prevConfig => ({
+    key,
+    direction: prevConfig.key === key && prevConfig.direction === 'asc' ? 'desc' : 'asc'
+  }));
+};
 
   // Pagination logic
-  const totalItems = filteredKonten.length;
-  const totalPages = Math.ceil(totalItems / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const currentItems = filteredKonten.slice(startIndex, endIndex);
+const totalItems = filteredAndSortedKonten.length;
+const totalPages = Math.ceil(totalItems / itemsPerPage);
+const startIndex = (currentPage - 1) * itemsPerPage;
+const endIndex = startIndex + itemsPerPage;
+const currentItems = filteredAndSortedKonten.slice(startIndex, endIndex);
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
@@ -591,9 +650,15 @@ export default function KontenPage() {
                   {columns.map((col, index) => (
                     <th
                       key={index}
-                      className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider"
+                      className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                      onClick={() => handleSort(col.accessor)}
                     >
-                      {col.header}
+                      <div className="flex items-center gap-1">
+                        {col.header}
+                        {sortConfig.key === col.accessor && (
+                          <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
                     </th>
                   ))}
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
