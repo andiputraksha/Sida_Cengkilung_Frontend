@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import DataTable from "@/components/ui/DataTable";
 import Modal from "@/components/ui/Modal";
@@ -31,6 +31,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 
 const API_URL = `${API_BASE_URL}/konten`;
+
 const compareByNumber = (a, b, key, direction = 'asc') => {
   const aValue = Number(a?.[key] ?? 0);
   const bValue = Number(b?.[key] ?? 0);
@@ -71,6 +72,11 @@ export default function KontenPage() {
   });
   const [showFilters, setShowFilters] = useState(false);
 
+  // Tambahan: state untuk melacak apakah tanggal diubah
+  const [isDateChanged, setIsDateChanged] = useState(false);
+  // Simpan nilai original tanggal saat edit
+  const originalDateRef = useRef(null);
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -79,24 +85,25 @@ export default function KontenPage() {
 
   // Fetch semua konten untuk admin
   const fetchKontenAdmin = async () => {
-  try {
-    setLoading(true);
-    const res = await axios.get(`${API_URL}/admin/semua`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    
-    const sortedData = [...(res.data.data || [])].sort((a, b) =>
-      compareByNumber(a, b, 'id_konten')
-    );
-    
-    setKonten(sortedData);
-  } catch (error) {
-    console.error("Error fetching konten:", error);
-    alert("Gagal memuat data konten");
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      setLoading(true);
+      const res = await axios.get(`${API_URL}/admin/semua`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      // PERBAIKAN: Sorting default diubah ke DESCENDING agar data terbaru muncul di paling atas
+      const sortedData = [...(res.data.data || [])].sort((a, b) =>
+        compareByNumber(a, b, 'id_konten', 'desc')
+      );
+      
+      setKonten(sortedData);
+    } catch (error) {
+      console.error("Error fetching konten:", error);
+      alert("Gagal memuat data konten");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Fetch kategori konten
   const fetchKategori = async () => {
@@ -147,20 +154,27 @@ export default function KontenPage() {
 
     const formData = new FormData();
     formData.append("judul", form.judul);
-    formData.append("ringkasan", form.ringkasan || ""); // Kirim string kosong jika undefined
+    formData.append("ringkasan", form.ringkasan || "");
     formData.append("isi_konten", form.isi_konten);
     formData.append("id_kategori_konten", form.id_kategori_konten);
     formData.append("status_konten", form.status_konten);
     
-    if (form.tanggal_publikasi) {
-      formData.append("tanggal_publikasi", form.tanggal_publikasi);
+    // PERBAIKAN: Hanya kirim tanggal_publikasi jika user benar-benar mengubahnya
+    // Saat tambah data baru, selalu kirim tanggal
+    // Saat edit, hanya kirim jika tanggal diubah
+    if (!editId) {
+      // Mode tambah baru: selalu kirim tanggal (termasuk string kosong)
+      formData.append("tanggal_publikasi", form.tanggal_publikasi || "");
+    } else {
+      // Mode edit: hanya kirim tanggal jika user mengubahnya
+      if (isDateChanged) {
+        formData.append("tanggal_publikasi", form.tanggal_publikasi || "");
+      }
+      // Jika tidak diubah, jangan kirim field tanggal_publikasi sama sekali
     }
     
     if (selectedFile) {
       formData.append("thumbnail", selectedFile);
-    } else if (editId && !selectedFile) {
-      // Jika edit dan tidak upload file baru, kirim string 'keep' atau jangan kirim apa-apa
-      // Tergantung implementasi backend, bisa juga tidak mengirim field thumbnail
     }
 
     try {
@@ -194,23 +208,31 @@ export default function KontenPage() {
     }
   };
 
+  // PERBAIKAN: Default sort config diubah ke DESCENDING
   const [sortConfig, setSortConfig] = useState({
     key: 'id_konten',
-    direction: 'asc'
+    direction: 'desc'
   });
 
   const handleEdit = (item) => {
+    const dateValue = toDateTimeLocalValue(item.tanggal_publikasi);
+    
     setForm({
       judul: item.judul,
       ringkasan: item.ringkasan || "",
       isi_konten: item.isi_konten,
       id_kategori_konten: item.id_kategori_konten,
       status_konten: item.status_konten,
-      tanggal_publikasi: toDateTimeLocalValue(item.tanggal_publikasi),
+      tanggal_publikasi: dateValue,
       thumbnail: null
     });
     setEditId(item.id_konten);
     setPreviewImage(item.thumbnail ? `${BACKEND_BASE_URL}/${item.thumbnail}` : null);
+    
+    // PERBAIKAN: Simpan nilai original tanggal dan reset flag perubahan
+    originalDateRef.current = dateValue;
+    setIsDateChanged(false);
+    
     setIsOpen(true);
   };
 
@@ -247,6 +269,18 @@ export default function KontenPage() {
     setEditId(null);
     setSelectedFile(null);
     setPreviewImage(null);
+    // PERBAIKAN: Reset flag perubahan tanggal
+    setIsDateChanged(false);
+    originalDateRef.current = null;
+  };
+
+  // PERBAIKAN: Handler khusus untuk perubahan tanggal
+  const handleDateChange = (e) => {
+    setForm({ ...form, tanggal_publikasi: e.target.value });
+    // Tandai bahwa tanggal telah diubah (hanya untuk mode edit)
+    if (editId) {
+      setIsDateChanged(true);
+    }
   };
 
   const formatDate = (date) => {
@@ -257,6 +291,15 @@ export default function KontenPage() {
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
+    });
+  };
+
+  const formatDateOnly = (date) => {
+    if (!date) return "-";
+    return new Date(date).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
     });
   };
 
@@ -291,69 +334,73 @@ export default function KontenPage() {
   };
 
   // Fungsi untuk sorting data
-const sortData = (data, config) => {
-  if (!config.key) return data;
-  
-  return [...data].sort((a, b) => {
-    if (config.key === 'id_konten') {
-      return compareByNumber(a, b, config.key, config.direction);
-    }
-
-    let aValue = a[config.key];
-    let bValue = b[config.key];
+  const sortData = (data, config) => {
+    if (!config.key) return data;
     
-    // Handle date values
-    if (config.key.includes('tanggal') || config.key.includes('created') || config.key.includes('updated')) {
-      aValue = new Date(aValue).getTime();
-      bValue = new Date(bValue).getTime();
-    }
-    
-    // Handle null/undefined values
-    if (aValue == null) return 1;
-    if (bValue == null) return -1;
-    
-    if (aValue < bValue) {
-      return config.direction === 'asc' ? -1 : 1;
-    }
-    if (aValue > bValue) {
-      return config.direction === 'asc' ? 1 : -1;
-    }
-    return compareByNumber(a, b, 'id_konten');
-  });
-};
+    return [...data].sort((a, b) => {
+      if (config.key === 'id_konten') {
+        return compareByNumber(a, b, config.key, config.direction);
+      }
 
-  /// Filter dan sort konten
-const filteredAndSortedKonten = sortData(
-  konten.filter(item => {
-    if (filter.status !== "semua" && item.status_konten !== filter.status) return false;
-    if (filter.kategori && item.id_kategori_konten != filter.kategori) return false;
-    if (filter.search) {
-      const searchLower = filter.search.toLowerCase();
-      return (
-        item.judul.toLowerCase().includes(searchLower) ||
-        (item.ringkasan && item.ringkasan.toLowerCase().includes(searchLower)) ||
-        (item.isi_konten && item.isi_konten.toLowerCase().includes(searchLower))
-      );
-    }
-    return true;
-  }),
-  sortConfig
-);
+      let aValue = a[config.key];
+      let bValue = b[config.key];
+      
+      // Handle date values
+      if (config.key.includes('tanggal') || config.key.includes('created') || config.key.includes('updated')) {
+        aValue = aValue ? new Date(aValue).getTime() : 0;
+        bValue = bValue ? new Date(bValue).getTime() : 0;
+      }
+      
+      // Handle null/undefined values
+      if (aValue == null) return 1;
+      if (bValue == null) return -1;
+      
+      if (aValue < bValue) {
+        return config.direction === 'asc' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return config.direction === 'asc' ? 1 : -1;
+      }
+      return compareByNumber(a, b, 'id_konten', config.direction);
+    });
+  };
 
+  // Filter dan sort konten
+  const filteredAndSortedKonten = sortData(
+    konten.filter(item => {
+      if (filter.status !== "semua" && item.status_konten !== filter.status) return false;
+      if (filter.kategori && item.id_kategori_konten != filter.kategori) return false;
+      if (filter.search) {
+        const searchLower = filter.search.toLowerCase();
+        return (
+          item.judul.toLowerCase().includes(searchLower) ||
+          (item.ringkasan && item.ringkasan.toLowerCase().includes(searchLower)) ||
+          (item.isi_konten && item.isi_konten.toLowerCase().includes(searchLower))
+        );
+      }
+      return true;
+    }),
+    sortConfig
+  );
 
-const handleSort = (key) => {
-  setSortConfig(prevConfig => ({
-    key,
-    direction: prevConfig.key === key && prevConfig.direction === 'asc' ? 'desc' : 'asc'
-  }));
-};
+  const handleSort = (key) => {
+    setSortConfig(prevConfig => ({
+      key,
+      direction: prevConfig.key === key && prevConfig.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
 
   // Pagination logic
-const totalItems = filteredAndSortedKonten.length;
-const totalPages = Math.ceil(totalItems / itemsPerPage);
-const startIndex = (currentPage - 1) * itemsPerPage;
-const endIndex = startIndex + itemsPerPage;
-const currentItems = filteredAndSortedKonten.slice(startIndex, endIndex);
+  const totalItems = filteredAndSortedKonten.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentItems = filteredAndSortedKonten.slice(startIndex, endIndex);
+
+  // PERBAIKAN: Reset ke halaman 1 saat filter berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, sortConfig]);
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
@@ -419,11 +466,21 @@ const currentItems = filteredAndSortedKonten.slice(startIndex, endIndex);
       )
     },
     { 
-      header: "Tanggal Diperbaharui", 
-      accessor: "tanggal_diperbarui",
+      header: "Tanggal Publikasi", 
+      accessor: "tanggal_publikasi",
       render: (value) => (
         <div className="flex items-center gap-1.5">
           <Calendar className="w-3.5 h-3.5 text-gray-500" />
+          <span className="text-sm text-gray-600">{formatDateOnly(value)}</span>
+        </div>
+      )
+    },
+    { 
+      header: "Diperbaharui", 
+      accessor: "tanggal_diperbarui",
+      render: (value) => (
+        <div className="flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5 text-gray-500" />
           <span className="text-sm text-gray-600">{formatDate(value)}</span>
         </div>
       )
@@ -667,154 +724,172 @@ const currentItems = filteredAndSortedKonten.slice(startIndex, endIndex);
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {currentItems.map((row, index) => (
-                  <motion.tr
-                    key={row.id_konten}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="hover:bg-gray-50 transition-colors group"
-                  >
-                    {columns.map((col, colIndex) => (
-                      <td key={colIndex} className="px-6 py-4">
-                        {col.render 
-                          ? col.render(row[col.accessor], row)
-                          : row[col.accessor] || '-'
-                        }
-                      </td>
-                    ))}
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleViewDetail(row)}
-                          className="p-1.5 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                          title="Lihat Detail"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEdit(row)}
-                          className="p-1.5 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(row.id_konten)}
-                          className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Hapus"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                {currentItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={columns.length + 1} className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <FileText className="w-12 h-12 text-gray-300 mb-3" />
+                        <p className="text-gray-500 font-medium">Tidak ada data konten</p>
+                        <p className="text-gray-400 text-sm mt-1">
+                          {filter.search || filter.status !== "semua" || filter.kategori 
+                            ? "Coba ubah filter pencarian" 
+                            : "Silakan tambahkan konten baru"}
+                        </p>
                       </div>
                     </td>
-                  </motion.tr>
-                ))}
+                  </tr>
+                ) : (
+                  currentItems.map((row, index) => (
+                    <motion.tr
+                      key={row.id_konten}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="hover:bg-gray-50 transition-colors group"
+                    >
+                      {columns.map((col, colIndex) => (
+                        <td key={colIndex} className="px-6 py-4">
+                          {col.render 
+                            ? col.render(row[col.accessor], row)
+                            : row[col.accessor] || '-'
+                          }
+                        </td>
+                      ))}
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleViewDetail(row)}
+                            className="p-1.5 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                            title="Lihat Detail"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleEdit(row)}
+                            className="p-1.5 text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(row.id_konten)}
+                            className="p-1.5 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Hapus"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
 
           {/* Pagination */}
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">Tampilkan</span>
-                <select
-                  value={itemsPerPage}
-                  onChange={handleItemsPerPageChange}
-                  className="px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                >
-                  {[5, 10, 25, 50, 100].map(num => (
-                    <option key={num} value={num}>{num}</option>
-                  ))}
-                </select>
-                <span className="text-sm text-gray-600">data per halaman</span>
-              </div>
-
-              <div className="flex items-center gap-1">
-                <span className="text-sm text-gray-600 mr-4">
-                  Menampilkan {startIndex + 1} - {Math.min(endIndex, totalItems)} dari {totalItems} data
-                </span>
-                
-                <button
-                  onClick={() => handlePageChange(1)}
-                  disabled={currentPage === 1}
-                  className={`p-2 rounded-lg transition-colors ${
-                    currentPage === 1
-                      ? 'text-gray-400 cursor-not-allowed'
-                      : 'text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <ChevronsLeft className="w-5 h-5" />
-                </button>
-                
-                <button
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className={`p-2 rounded-lg transition-colors ${
-                    currentPage === 1
-                      ? 'text-gray-400 cursor-not-allowed'
-                      : 'text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNum;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-                    
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => handlePageChange(pageNum)}
-                        className={`w-10 h-10 rounded-lg font-medium transition-colors ${
-                          currentPage === pageNum
-                            ? 'bg-amber-600 text-white'
-                            : 'text-gray-600 hover:bg-gray-200'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
+          {totalItems > 0 && (
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Tampilkan</span>
+                  <select
+                    value={itemsPerPage}
+                    onChange={handleItemsPerPageChange}
+                    className="px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    {[5, 10, 25, 50, 100].map(num => (
+                      <option key={num} value={num}>{num}</option>
+                    ))}
+                  </select>
+                  <span className="text-sm text-gray-600">data per halaman</span>
                 </div>
 
-                <button
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className={`p-2 rounded-lg transition-colors ${
-                    currentPage === totalPages
-                      ? 'text-gray-400 cursor-not-allowed'
-                      : 'text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-gray-600 mr-4">
+                    Menampilkan {startIndex + 1} - {Math.min(endIndex, totalItems)} dari {totalItems} data
+                  </span>
+                  
+                  <button
+                    onClick={() => handlePageChange(1)}
+                    disabled={currentPage === 1}
+                    className={`p-2 rounded-lg transition-colors ${
+                      currentPage === 1
+                        ? 'text-gray-400 cursor-not-allowed'
+                        : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <ChevronsLeft className="w-5 h-5" />
+                  </button>
+                  
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className={`p-2 rounded-lg transition-colors ${
+                      currentPage === 1
+                        ? 'text-gray-400 cursor-not-allowed'
+                        : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
 
-                <button
-                  onClick={() => handlePageChange(totalPages)}
-                  disabled={currentPage === totalPages}
-                  className={`p-2 rounded-lg transition-colors ${
-                    currentPage === totalPages
-                      ? 'text-gray-400 cursor-not-allowed'
-                      : 'text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  <ChevronsRight className="w-5 h-5" />
-                </button>
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum;
+                      if (totalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i;
+                      } else {
+                        pageNum = currentPage - 2 + i;
+                      }
+                      
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => handlePageChange(pageNum)}
+                          className={`w-10 h-10 rounded-lg font-medium transition-colors ${
+                            currentPage === pageNum
+                              ? 'bg-amber-600 text-white'
+                              : 'text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className={`p-2 rounded-lg transition-colors ${
+                      currentPage === totalPages
+                        ? 'text-gray-400 cursor-not-allowed'
+                        : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+
+                  <button
+                    onClick={() => handlePageChange(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className={`p-2 rounded-lg transition-colors ${
+                      currentPage === totalPages
+                        ? 'text-gray-400 cursor-not-allowed'
+                        : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <ChevronsRight className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -910,8 +985,18 @@ const currentItems = filteredAndSortedKonten.slice(startIndex, endIndex);
                 type="datetime-local"
                 className="w-full border border-gray-300 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                 value={form.tanggal_publikasi}
-                onChange={(e) => setForm({ ...form, tanggal_publikasi: e.target.value })}
+                onChange={handleDateChange}
               />
+              {editId && !isDateChanged && (
+                <p className="text-xs text-blue-500 mt-1">
+                  *Tanggal publikasi tidak akan berubah jika tidak diubah
+                </p>
+              )}
+              {editId && isDateChanged && (
+                <p className="text-xs text-amber-500 mt-1">
+                  *Tanggal publikasi akan diperbarui
+                </p>
+              )}
             </div>
 
             <div>
@@ -987,12 +1072,12 @@ const currentItems = filteredAndSortedKonten.slice(startIndex, endIndex);
                   <User className="w-4 h-4" />
                   <span>{selectedKonten.penulis}</span>
                 </div>
-                <span className="text-gray-400"></span>
+                <span className="text-gray-400">•</span>
                 <div className="flex items-center gap-1 text-gray-600">
                   <Tag className="w-4 h-4" />
                   <span>{selectedKonten.nama_kategori}</span>
                 </div>
-                <span className="text-gray-400"></span>
+                <span className="text-gray-400">•</span>
                 {getStatusBadge(selectedKonten.status_konten)}
               </div>
             </div>
@@ -1012,15 +1097,17 @@ const currentItems = filteredAndSortedKonten.slice(startIndex, endIndex);
             <div className="border-t pt-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <p className="text-gray-500">Dibuat</p>
-                  <p className="font-medium text-gray-800">{formatDate(selectedKonten.tanggal_diperbarui)}</p>
+                  <p className="text-gray-500">Tanggal Publikasi</p>
+                  <p className="font-medium text-gray-800">
+                    {formatDate(selectedKonten.tanggal_publikasi)}
+                  </p>
                 </div>
-                {selectedKonten.tanggal_publikasi && (
-                  <div>
-                    <p className="text-gray-500">Dipublikasi</p>
-                    <p className="font-medium text-gray-800">{formatDate(selectedKonten.tanggal_publikasi)}</p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-gray-500">Terakhir Diperbaharui</p>
+                  <p className="font-medium text-gray-800">
+                    {formatDate(selectedKonten.tanggal_diperbarui)}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -1051,6 +1138,3 @@ function Archive(props) {
     </svg>
   );
 }
-
-
-
