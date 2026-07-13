@@ -139,7 +139,7 @@ export default function DataDesa() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterJenis, setFilterJenis] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [pengajuanTimeFilter, setPengajuanTimeFilter] = useState("all"); // DEFAULT: Semua Pengajuan
+  const [pengajuanTimeFilter, setPengajuanTimeFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
   
   // ==================== DATATABLE STATE UNTUK STATUS SURAT ====================
@@ -485,36 +485,10 @@ export default function DataDesa() {
     }
   };
 
-  const MASA_BERLAKU_HARI = 3;
-
   const parseDateValue = (value) => {
     if (!value) return null;
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? null : d;
-  };
-
-  const getTanggalSelesaiPengajuan = (item) => {
-    return (
-      parseDateValue(item?.tanggal_selesai) ||
-      parseDateValue(item?.updated_at) ||
-      parseDateValue(item?.tanggal_update) ||
-      parseDateValue(item?.tanggal_pengajuan)
-    );
-  };
-
-  const getBatasBerlakuSurat = (item) => {
-    const tanggalMulai = getTanggalSelesaiPengajuan(item);
-    if (!tanggalMulai) return null;
-    const batas = new Date(tanggalMulai);
-    batas.setDate(batas.getDate() + MASA_BERLAKU_HARI);
-    return batas;
-  };
-
-  const isPengajuanExpired = (item) => {
-    if (item?.status !== "SELESAI" || !item?.file_final) return false;
-    const batasBerlaku = getBatasBerlakuSurat(item);
-    if (!batasBerlaku) return false;
-    return new Date() > batasBerlaku;
   };
 
   const getDaysSincePengajuan = (item) => {
@@ -529,10 +503,9 @@ export default function DataDesa() {
   
   // ==================== DATATABLE LOGIC UNTUK STATUS SURAT ====================
   
-  // Data mentah untuk DataTable
+  // Semua data ditampilkan permanen tanpa filter expired
   const allStatusData = useMemo(() => {
     return pengajuanSaya
-      .filter(item => !isPengajuanExpired(item))
       .map(item => {
         const alasanField = item.detail_fields?.find(
           f => f.field_name === 'alasan_dispensasi' || 
@@ -546,7 +519,6 @@ export default function DataDesa() {
           _alasan: alasanField?.field_value || item.detail_fields?.[0]?.field_value || '-',
           _jenisSuratNama: item.jenis_surat?.nama_jenis || item.nama_jenis || '-',
           _tanggalPengajuan: parseDateValue(item.tanggal_pengajuan),
-          _batasBerlaku: getBatasBerlakuSurat(item),
           _daysSince: getDaysSincePengajuan(item),
           _id: item.id_pengajuan
         };
@@ -557,7 +529,7 @@ export default function DataDesa() {
   const filteredStatusData = useMemo(() => {
     let data = [...allStatusData];
     
-    // Filter periode pengajuan
+    // Filter periode pengajuan (hanya jika user memilih filter waktu)
     if (pengajuanTimeFilter !== "all") {
       data = data.filter(item => {
         const daysSince = item._daysSince;
@@ -1279,12 +1251,6 @@ export default function DataDesa() {
                                 {getSortIcon("jenis")}
                               </div>
                             </th>
-                            {/* <th className="no-sort">
-                              <div className="flex items-center gap-2">
-                                <Info className="w-3.5 h-3.5" />
-                                Alasan / Keterangan
-                              </div>
-                            </th> */}
                             <th onClick={() => handleStatusSort("status")} className="w-[120px]">
                               <div className="flex items-center gap-2">
                                 <ListChecks className="w-3.5 h-3.5" />
@@ -1292,20 +1258,7 @@ export default function DataDesa() {
                                 {getSortIcon("status")}
                               </div>
                             </th>
-                            {/* <th onClick={() => handleStatusSort("no_surat")} className="w-[130px]">
-                              <div className="flex items-center gap-2">
-                                <FileSignature className="w-3.5 h-3.5" />
-                                No. Surat
-                                {getSortIcon("no_surat")}
-                              </div>
-                            </th> */}
-                            {/* <th className="no-sort w-[160px]">
-                              <div className="flex items-center gap-2">
-                                <Clock className="w-3.5 h-3.5" />
-                                Info Berlaku
-                              </div>
-                            </th> */}
-                            <th className="no-sort w-[200px] text-center">
+                            <th className="no-sort w-[160px] text-center">
                               Aksi
                             </th>
                           </tr>
@@ -1332,29 +1285,9 @@ export default function DataDesa() {
                                   {item._jenisSuratNama}
                                 </span>
                               </td>
-                              {/* <td>
-                                <span className="text-sm text-gray-600 line-clamp-2">
-                                  {item._alasan}
-                                </span>
-                              </td> */}
                               <td>
                                 {getStatusBadge(item.status)}
                               </td>
-                              {/* <td>
-                                <span className="text-sm text-gray-700">
-                                  {item.no_surat || '-'}
-                                </span>
-                              </td> */}
-                              {/* <td>
-                                {item.status === "SELESAI" && item.file_final && item._batasBerlaku ? (
-                                  <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-md inline-flex items-center gap-1">
-                                    <Clock className="w-3 h-3" />
-                                    s/d {formatDate(item._batasBerlaku)}
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-gray-400">-</span>
-                                )}
-                              </td> */}
                               <td>
                                 <div className="flex items-center justify-center gap-2">
                                   <button
@@ -1542,14 +1475,10 @@ export default function DataDesa() {
                 <div><h3 className="text-xl font-bold text-gray-800">{selectedPengajuan.jenis_surat?.nama_jenis}</h3><p className="text-sm text-gray-500">Diajukan: {formatDateTime(selectedPengajuan.tanggal_pengajuan)}</p></div>
               </div>
               
-              <div className="flex justify-between items-center mb-4">{getStatusBadge(selectedPengajuan.status)}{selectedPengajuan.no_surat && <p className="text-sm text-gray-600">No. Surat: {selectedPengajuan.no_surat}</p>}</div>
-              {selectedPengajuan.status === "SELESAI" && selectedPengajuan.file_final && getBatasBerlakuSurat(selectedPengajuan) && (
-                <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <p className="text-sm text-amber-800">
-                    Surat berlaku 3 hari sampai {formatDateTime(getBatasBerlakuSurat(selectedPengajuan))}. Disarankan download dokumen/surat sebelum masa berlaku habis.
-                  </p>
-                </div>
-              )}
+              <div className="flex justify-between items-center mb-4">
+                {getStatusBadge(selectedPengajuan.status)}
+                {selectedPengajuan.no_surat && <p className="text-sm text-gray-600">No. Surat: {selectedPengajuan.no_surat}</p>}
+              </div>
               
               <div className="border-t pt-4 mb-4"><h4 className="font-semibold text-gray-800 mb-3">Data Pengajuan</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1575,7 +1504,9 @@ export default function DataDesa() {
               
               <div className="flex gap-3">
                 {selectedPengajuan.status === "SELESAI" && selectedPengajuan.file_final && (
-                  <button onClick={() => handleDownloadSurat(selectedPengajuan.id_pengajuan, `surat_${selectedPengajuan.id_pengajuan}.pdf`)} className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"><Download className="w-4 h-4" /> Download Surat</button>
+                  <button onClick={() => handleDownloadSurat(selectedPengajuan.id_pengajuan, `surat_${selectedPengajuan.id_pengajuan}.pdf`)} className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2">
+                    <Download className="w-4 h-4" /> Download Surat
+                  </button>
                 )}
                 <button onClick={() => setIsDetailModalOpen(false)} className="flex-1 bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300">Tutup</button>
               </div>
