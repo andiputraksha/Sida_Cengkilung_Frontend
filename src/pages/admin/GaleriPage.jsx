@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import DataTable from "@/components/ui/DataTable";
 import Modal from "@/components/ui/Modal";
@@ -581,8 +581,18 @@ export default function GaleriPage() {
       header: "Judul", 
       accessor: "judul_media",
       render: (value, row) => (
-        <div>
-          <div className="font-medium text-gray-900">{value}</div>
+        <div className="max-w-[280px] min-w-[180px]">
+          <div
+            className="font-medium text-gray-900 overflow-hidden"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical"
+            }}
+            title={value}
+          >
+            {value}
+          </div>
           <div className="text-xs text-gray-500 mt-0.5">
             ID: {row.id_galeri}
           </div>
@@ -910,7 +920,14 @@ export default function GaleriPage() {
                       className="hover:bg-gray-50 transition-colors group"
                     >
                       {columns.map((col, colIndex) => (
-                        <td key={colIndex} className="px-4 py-3 whitespace-nowrap">
+                        <td 
+                          key={colIndex} 
+                          className={`px-4 py-3 ${
+                            col.accessor === "judul_media"
+                              ? "w-[300px] max-w-[300px]"
+                              : "whitespace-nowrap"
+                          }`}
+                        >
                           {col.render 
                             ? col.render(row[col.accessor], row)
                             : row[col.accessor] || '-'
@@ -1308,90 +1325,135 @@ export default function GaleriPage() {
         size="xl"
       >
         {selectedMedia && (
-          <div className="space-y-6">
-            <h3 className="text-xl font-bold text-gray-800">{selectedMedia.judul_media}</h3>
-            
-            <div className="relative bg-black rounded-lg overflow-hidden">
-              {selectedMedia.tipe_media === 'foto' ? (
-                <img
-                  src={buildAssetUrl(selectedMedia.file_path)}
-                  alt={selectedMedia.judul_media}
-                  className="w-full max-h-[70vh] object-contain"
-                />
-              ) : (
-                <div className="aspect-w-16 aspect-h-9">
-                  {selectedMedia.file_path && selectedMedia.file_path.includes('youtu') ? (
-                    <iframe
-                      src={getYouTubeEmbedUrl(selectedMedia.file_path)}
-                      className="w-full h-[70vh]"
-                      allowFullScreen
-                      title={selectedMedia.judul_media}
-                    ></iframe>
-                  ) : (
-                    <video
-                      src={buildAssetUrl(selectedMedia.file_path)}
-                      controls
-                      className="w-full h-[70vh]"
-                    />
-                  )}
-                </div>
-              )}
-            </div>
+        <div className="space-y-6">
+          {/* Judul dengan line-clamp untuk judul panjang */}
+          <div>
+            <h3 
+              className="text-xl font-bold text-gray-800 break-words"
+              title={selectedMedia.judul_media}
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden"
+              }}
+            >
+              {selectedMedia.judul_media}
+            </h3>
+            {selectedMedia.judul_media && selectedMedia.judul_media.length > 100 && (
+              <p className="text-xs text-gray-400 mt-1">
+                
+              </p>
+            )}
+          </div>
+          
+          {/* Kontainer Media */}
+          <div className="relative bg-black rounded-lg overflow-hidden">
+            {selectedMedia.tipe_media === 'foto' ? (
+              <img
+                src={buildAssetUrl(selectedMedia.file_path)}
+                alt={selectedMedia.judul_media}
+                className="w-full max-h-[70vh] object-contain"
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iI2UyZThmMCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTgiIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5HYW1iYXIgVGlkYWsgVGVyc2VkaWE8L3RleHQ+PC9zdmc+';
+                }}
+              />
+            ) : (
+              <div className="aspect-w-16 aspect-h-9">
+                {selectedMedia.file_path && selectedMedia.file_path.includes('youtu') ? (
+                  <iframe
+                    src={getYouTubeEmbedUrl(selectedMedia.file_path)}
+                    className="w-full h-[70vh]"
+                    allowFullScreen
+                    title={selectedMedia.judul_media}
+                  ></iframe>
+                ) : (
+                  <video
+                    src={buildAssetUrl(selectedMedia.file_path)}
+                    controls
+                    className="w-full h-[70vh]"
+                  />
+                )}
+              </div>
+            )}
+          </div>
 
-            {/* ✅ PERBAIKAN: Grid 4 kolom dengan Tanggal Diperbaharui */}
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-gray-500 mb-1">Kategori</p>
-                <p className="font-medium text-gray-800 flex items-center gap-1">
-                  <FolderOpen className="w-4 h-4 text-amber-600" />
-                  {selectedMedia.nama_kategori}
+          {/* Grid Info Responsif */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-xs text-gray-500 mb-1 font-medium">Kategori</p>
+              <div className="flex items-center gap-1.5">
+                <FolderOpen className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <p className="font-medium text-gray-800 text-sm break-words">
+                  {selectedMedia.nama_kategori || '-'}
                 </p>
               </div>
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-gray-500 mb-1">Tipe</p>
-                <p className="font-medium text-gray-800 flex items-center gap-1">
-                  {selectedMedia.tipe_media === 'foto' ? (
-                    <Camera className="w-4 h-4 text-emerald-600" />
-                  ) : (
-                    <Video className="w-4 h-4 text-amber-600" />
-                  )}
-                  {selectedMedia.tipe_media === 'foto' ? 'Foto' : 'Video'}
-                  {selectedMedia.file_path && selectedMedia.file_path.includes('youtu') && (
-                    <>
-                      <span className="mx-1"></span>
-                      <Youtube className="w-4 h-4 text-red-600" />
-                      <span>YouTube</span>
-                    </>
-                  )}
-                </p>
+            </div>
+            
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-xs text-gray-500 mb-1 font-medium">Tipe Media</p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {selectedMedia.tipe_media === 'foto' ? (
+                  <>
+                    <Camera className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span className="text-sm font-medium text-gray-800">Foto</span>
+                  </>
+                ) : (
+                  <>
+                    <Video className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <span className="text-sm font-medium text-gray-800">Video</span>
+                  </>
+                )}
+                {selectedMedia.file_path && selectedMedia.file_path.includes('youtu') && (
+                  <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 bg-red-50 text-red-700 rounded-full text-xs font-medium">
+                    <Youtube className="w-3 h-3" />
+                    YouTube
+                  </span>
+                )}
               </div>
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-gray-500 mb-1">Tanggal Publikasi</p>
-                <p className="font-medium text-gray-800 flex items-center gap-1">
-                  <Calendar className="w-4 h-4 text-green-600" />
+            </div>
+            
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-xs text-gray-500 mb-1 font-medium">Tanggal Publikasi</p>
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-4 h-4 text-green-600 flex-shrink-0" />
+                <p className="font-medium text-gray-800 text-sm break-words">
                   {formatDateTime(selectedMedia.tanggal_publikasi)}
                 </p>
               </div>
-              {/* ✅ PERBAIKAN: Field Diperbaharui di modal preview */}
-              <div className="bg-gray-50 p-3 rounded-lg">
-                <p className="text-gray-500 mb-1">Diperbaharui</p>
-                <p className="font-medium text-gray-800 flex items-center gap-1">
-                  <Clock className="w-4 h-4 text-blue-600" />
+            </div>
+            
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-xs text-gray-500 mb-1 font-medium">Terakhir Diperbaharui</p>
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <p className="font-medium text-gray-800 text-sm break-words">
                   {formatDateTime(selectedMedia.tanggal_diperbarui)}
                 </p>
               </div>
             </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={() => setIsPreviewOpen(false)}
-                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
-              >
-                Tutup
-              </button>
-            </div>
           </div>
-        )}
+
+          {/* Informasi Tambahan */}
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <p className="text-xs text-gray-500 mb-1 font-medium">ID Media</p>
+            <p className="font-medium text-gray-800 text-sm">
+              #{selectedMedia.id_galeri}
+            </p>
+          </div>
+
+          {/* Tombol Aksi */}
+          <div className="flex flex-col sm:flex-row gap-2 justify-end pt-2 border-t border-gray-100">
+            <button
+              onClick={() => setIsPreviewOpen(false)}
+              className="px-6 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg transition-colors font-medium text-sm"
+            >
+              Tutup Preview
+            </button>
+          </div>
+        </div>
+      )}
       </Modal>
     </motion.div>
   );
