@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import axios from "axios";
 import Modal from "@/components/ui/Modal";
 import { API_BASE_URL, buildAssetUrl } from "@/utils/api";
@@ -139,6 +139,7 @@ export default function DokumenPage() {
   const [dokumenForm, setDokumenForm] = useState({
     judul_dokumen: "",
     deskripsi_dokumen: "",
+    kategori: "Surat", // Tambah kategori
     jenis_dokumen: "",
     hak_akses: "publik",
     status_dokumen: "aktif",
@@ -147,6 +148,7 @@ export default function DokumenPage() {
   const [editDokumenId, setEditDokumenId] = useState(null);
   
   const [jenisSuratForm, setJenisSuratForm] = useState({
+    kategori: "Surat",
     nama_jenis: "",
     deskripsi: "",
     status: "aktif",
@@ -168,9 +170,13 @@ export default function DokumenPage() {
   const [suratStatus, setSuratStatus] = useState("");
   
   // Filter states
-  const [dokumenFilter, setDokumenFilter] = useState({ search: "", jenis: "", status: "" });
+  const [dokumenFilter, setDokumenFilter] = useState({ search: "", kategori: "", jenis: "", status: "" });
   const [suratFilter, setSuratFilter] = useState({ search: "", jenis: "", status: "" });
-  const [jenisSuratFilter, setJenisSuratFilter] = useState({ search: "", status: "" });
+  const [jenisSuratFilter, setJenisSuratFilter] = useState({
+    search: "",
+    kategori: "",
+    status: ""
+  });
   const [showDokumenFilters, setShowDokumenFilters] = useState(false);
   const [showSuratFilters, setShowSuratFilters] = useState(false);
   
@@ -194,14 +200,15 @@ export default function DokumenPage() {
   
   const token = localStorage.getItem("token");
   
-  // ... (semua fungsi utility tetap sama: parseJsonSafely, normalizeJenisSurat, normalizePengajuan, dll.) ...
-  
+  // ==================== UTILITY FUNCTIONS ====================
   const parseJsonSafely = (value, fallback) => {
     if (value === null || value === undefined) return fallback;
     if (typeof value === "object") return value;
     if (typeof value !== "string") return fallback;
     try {
-      const parsed = JSON.parse(value);
+      // Handle case where value might be a string representation of JSON
+      const cleaned = value.replace(/[\r\n\s]+/g, ' ').trim();
+      const parsed = JSON.parse(cleaned);
       return parsed ?? fallback;
     } catch {
       return fallback;
@@ -237,7 +244,7 @@ export default function DokumenPage() {
     }));
 
   const SOP_SURAT_HARI_KERJA = 3;
-  const ACTIVE_SURAT_STATUSES = ["MENUNGGU", "DRAFT", "LEGALISI", "SIAP"];
+  const ACTIVE_SURAT_STATUSES = ["MENUNGGU", "DRAFT", "LEGALISASI", "SIAP"];
 
   const normalizePriorityText = (value) =>
     String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -389,17 +396,29 @@ export default function DokumenPage() {
     );
   };
 
+  // Kategori options
+  const kategoriOptions = ["Surat", "Dokumen Adat/Desa"];
+  
   // Jenis dokumen harus mengikuti master jenis surat
-  const jenisDokumenOptions = jenisSurat
-    .filter((item) => item.status === "aktif")
-    .map((item) => item.nama_jenis)
-    .filter(Boolean);
+  const jenisDokumenOptions = useMemo(() => {
+    return jenisSurat
+      .filter((item) => item.status === "aktif")
+      .filter((item) => {
+        // Filter berdasarkan kategori yang dipilih
+        if (dokumenForm.kategori) {
+          return item.kategori === dokumenForm.kategori;
+        }
+        return true;
+      })
+      .map((item) => item.nama_jenis)
+      .filter(Boolean);
+  }, [jenisSurat, dokumenForm.kategori]);
   
   // Status surat options
   const statusSuratOptions = [
     { value: "MENUNGGU", label: "Menunggu", color: "orange" },
     { value: "DRAFT", label: "Draft", color: "gray" },
-    { value: "LEGALISI", label: "Legalisasi", color: "purple" },
+    { value: "LEGALISASI", label: "Legalisasi", color: "purple" },
     { value: "SIAP", label: "Siap", color: "blue" },
     { value: "SELESAI", label: "Selesai", color: "green" }
   ];
@@ -407,13 +426,26 @@ export default function DokumenPage() {
   // ==================== API CALLS ====================
   
   // Fetch dokumen
+  // Ganti fetchDokumen dengan:
   const fetchDokumen = async ({ withLoading = true } = {}) => {
     try {
       if (withLoading) setLoading(true);
       const res = await axios.get(`${API_URL}/admin/semua`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setDokumen(res.data.data || []);
+      
+      // Pastikan setiap dokumen memiliki field kategori yang benar
+      const dokumenData = (res.data.data || []).map(item => {
+        console.log("Dokumen dari API:", item); // Debug
+        return {
+          ...item,
+                // Preferensi: kategori, kategori_dokumen, jenis_dokumen
+                kategori: item.kategori || item.kategori_dokumen || item.jenis_dokumen || "Surat",
+                jenis_dokumen: item.jenis_dokumen || item.kategori_dokumen || ""
+              };
+            });
+      
+            setDokumen(dokumenData);
     } catch (error) {
       console.error("Error fetching dokumen:", error);
       alert("Gagal memuat data dokumen");
@@ -459,13 +491,11 @@ export default function DokumenPage() {
     }
   };
 
-  // ==================== PERBAIKAN 1: FETCH SEMUA DATA SAAT KOMPONEN MOUNT ====================
-  // Ini memastikan notifikasi angka langsung muncul saat halaman dibuka
+  // Fetch semua data saat komponen mount
   useEffect(() => {
     const fetchAllDataOnMount = async () => {
       try {
         setLoading(true);
-        // Fetch semua data sekaligus saat komponen pertama kali dimount
         await Promise.all([
           fetchDokumen({ withLoading: false }),
           fetchPengajuanSurat({ withLoading: false }),
@@ -479,9 +509,9 @@ export default function DokumenPage() {
     };
     
     fetchAllDataOnMount();
-  }, []); // Hanya dijalankan sekali saat mount
+  }, []);
 
-  // Refresh data saat tab berubah (untuk memastikan data tetap segar)
+  // Refresh data saat tab berubah
   useEffect(() => {
     const refreshTabData = async () => {
       try {
@@ -512,8 +542,6 @@ export default function DokumenPage() {
     try {
       setRefreshing(true);
       setLoading(true);
-
-      // Fetch semua data
       await Promise.all([
         fetchDokumen({ withLoading: false }),
         fetchPengajuanSurat({ withLoading: false }),
@@ -525,8 +553,6 @@ export default function DokumenPage() {
     }
   };
   
-  // ... (semua fungsi CRUD tetap sama: handleDokumenSubmit, handleEditDokumen, handleDeleteDokumen, dll.) ...
-  
   // ==================== DOKUMEN CRUD ====================
   
   const handleDokumenSubmit = async (e) => {
@@ -534,6 +560,11 @@ export default function DokumenPage() {
     
     if (!dokumenForm.judul_dokumen?.trim() || !dokumenForm.jenis_dokumen?.trim()) {
       alert("Judul dan jenis dokumen wajib diisi");
+      return;
+    }
+    
+    if (!dokumenForm.kategori) {
+      alert("Kategori dokumen wajib dipilih");
       return;
     }
     
@@ -545,6 +576,7 @@ export default function DokumenPage() {
     const formData = new FormData();
     formData.append("judul_dokumen", dokumenForm.judul_dokumen.trim());
     formData.append("deskripsi_dokumen", dokumenForm.deskripsi_dokumen || "");
+    formData.append("kategori", dokumenForm.kategori); // Pastikan ini terkirim
     formData.append("jenis_dokumen", dokumenForm.jenis_dokumen.trim());
     formData.append("hak_akses", dokumenForm.hak_akses || "publik");
     formData.append("status_dokumen", dokumenForm.status_dokumen || "aktif");
@@ -552,23 +584,43 @@ export default function DokumenPage() {
     
     try {
       setLoading(true);
+      
+      // Debug: Tampilkan data yang dikirim
+      console.log("Data yang dikirim:", {
+        judul_dokumen: dokumenForm.judul_dokumen.trim(),
+        kategori: dokumenForm.kategori,
+        jenis_dokumen: dokumenForm.jenis_dokumen.trim(),
+        hak_akses: dokumenForm.hak_akses,
+        status_dokumen: dokumenForm.status_dokumen
+      });
+      
       if (editDokumenId) {
-        await axios.put(`${API_URL}/admin/${editDokumenId}`, formData, {
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
+        const response = await axios.put(`${API_URL}/admin/${editDokumenId}`, formData, {
+          headers: { 
+            Authorization: `Bearer ${token}`, 
+            "Content-Type": "multipart/form-data" 
+          },
           onUploadProgress: (p) => setUploadProgress(Math.round((p.loaded * 100) / p.total))
         });
+        console.log("Response update:", response.data);
         alert("Dokumen berhasil diperbarui");
       } else {
-        await axios.post(`${API_URL}/admin`, formData, {
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
+        const response = await axios.post(`${API_URL}/admin`, formData, {
+          headers: { 
+            Authorization: `Bearer ${token}`, 
+            "Content-Type": "multipart/form-data" 
+          },
           onUploadProgress: (p) => setUploadProgress(Math.round((p.loaded * 100) / p.total))
         });
+        console.log("Response create:", response.data);
         alert("Dokumen berhasil ditambahkan");
       }
+      
       setIsDokumenModalOpen(false);
       resetDokumenForm();
-      fetchDokumen();
+      await fetchDokumen(); // Refresh data
     } catch (error) {
+      console.error("Error detail:", error.response?.data || error);
       alert(error.response?.data?.message || "Gagal menyimpan dokumen");
     } finally {
       setLoading(false);
@@ -576,16 +628,24 @@ export default function DokumenPage() {
     }
   };
   
+  // Ganti handleEditDokumen dengan:
   const handleEditDokumen = (item) => {
     const safeStatus =
       item?.status_dokumen === "aktif" || item?.status_dokumen === "arsip"
         ? item.status_dokumen
         : "aktif";
 
+    // Ambil kategori dari item, cek beberapa properti yang mungkin dipakai di DB
+    const kategori = item?.kategori || item?.kategori_dokumen || item?.jenis_dokumen || "Surat";
+    const jenis = item?.jenis_dokumen || item?.kategori_dokumen || "";
+
+    console.log("Edit dokumen - kategori:", kategori, "jenis:", jenis); // Debug
+
     setDokumenForm({
       judul_dokumen: item?.judul_dokumen || "",
       deskripsi_dokumen: item?.deskripsi_dokumen || "",
-      jenis_dokumen: item?.jenis_dokumen || "",
+      kategori: kategori,
+      jenis_dokumen: jenis,
       hak_akses: item?.hak_akses === "terbatas" ? "terbatas" : "publik",
       status_dokumen: safeStatus,
       file: null
@@ -607,7 +667,15 @@ export default function DokumenPage() {
   };
   
   const resetDokumenForm = () => {
-    setDokumenForm({ judul_dokumen: "", deskripsi_dokumen: "", jenis_dokumen: "", hak_akses: "publik", status_dokumen: "aktif", file: null });
+    setDokumenForm({ 
+      judul_dokumen: "", 
+      deskripsi_dokumen: "", 
+      kategori: "Surat",
+      jenis_dokumen: "", 
+      hak_akses: "publik", 
+      status_dokumen: "aktif", 
+      file: null 
+    });
     setEditDokumenId(null);
     setSelectedFile(null);
     setUploadProgress(0);
@@ -665,56 +733,104 @@ export default function DokumenPage() {
   
   const handleJenisSuratSubmit = async (e) => {
     e.preventDefault();
-    if (!jenisSuratForm.nama_jenis) {
-      alert("Nama jenis surat wajib diisi");
+
+    if (!jenisSuratForm.kategori) {
+      alert("Kategori dokumen wajib dipilih");
       return;
     }
-    
+
+    if (!jenisSuratForm.nama_jenis?.trim()) {
+      alert("Nama jenis dokumen wajib diisi");
+      return;
+    }
+
     const data = {
-      ...jenisSuratForm,
-      fields_config: { fields: tempFields }
+      kategori: jenisSuratForm.kategori,
+      nama_jenis: jenisSuratForm.nama_jenis.trim(),
+      deskripsi: jenisSuratForm.deskripsi || "",
+      status: jenisSuratForm.status || "aktif",
+      fields_config: {
+        fields: tempFields
+      },
+      upload_config: jenisSuratForm.upload_config
     };
-    
+
     try {
       setLoading(true);
+
       if (editJenisSuratId) {
-        await axios.put(`${SURAT_API_URL}/jenis/${editJenisSuratId}`, data, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        alert("Jenis surat berhasil diperbarui");
+        await axios.put(
+          `${SURAT_API_URL}/jenis/${editJenisSuratId}`,
+          data,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        );
+
+        alert("Jenis dokumen berhasil diperbarui");
       } else {
-        await axios.post(`${SURAT_API_URL}/jenis`, data, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        alert("Jenis surat berhasil ditambahkan");
+        await axios.post(
+          `${SURAT_API_URL}/jenis`,
+          data,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        );
+
+        alert("Jenis dokumen berhasil ditambahkan");
       }
+
       setIsJenisSuratModalOpen(false);
       resetJenisSuratForm();
-      fetchJenisSurat();
+      await fetchJenisSurat();
+
     } catch (error) {
-      alert(error.response?.data?.message || "Gagal menyimpan jenis surat");
+      console.error("Error menyimpan jenis dokumen:", error);
+
+      alert(
+        error.response?.data?.message ||
+        "Gagal menyimpan jenis dokumen"
+      );
     } finally {
       setLoading(false);
     }
   };
   
   const handleEditJenisSurat = (item) => {
-    const normalizedFieldsConfig = parseJsonSafely(item.fields_config, { fields: [] });
-    const normalizedUploadConfig = parseJsonSafely(item.upload_config, {
-      allow_upload: true,
-      max_files: 5,
-      max_size_mb: 5,
-      allowed_types: ["pdf", "jpg", "png"]
-    });
+    const normalizedFieldsConfig = parseJsonSafely(
+      item.fields_config,
+      { fields: [] }
+    );
+
+    const normalizedUploadConfig = parseJsonSafely(
+      item.upload_config,
+      {
+        allow_upload: true,
+        max_files: 5,
+        max_size_mb: 5,
+        allowed_types: ["pdf", "jpg", "png"]
+      }
+    );
 
     setJenisSuratForm({
-      nama_jenis: item.nama_jenis,
+      kategori: item.kategori || "Surat",
+      nama_jenis: item.nama_jenis || "",
       deskripsi: item.deskripsi || "",
-      status: item.status,
+      status: item.status || "aktif",
       fields_config: normalizedFieldsConfig,
       upload_config: normalizedUploadConfig
     });
-    setTempFields(normalizedFieldsConfig?.fields || []);
+
+    setTempFields(
+      Array.isArray(normalizedFieldsConfig?.fields)
+        ? normalizedFieldsConfig.fields
+        : []
+    );
+
     setEditJenisSuratId(item.id_jenis);
     setIsJenisSuratModalOpen(true);
   };
@@ -738,16 +854,25 @@ export default function DokumenPage() {
   
   const resetJenisSuratForm = () => {
     setJenisSuratForm({
+      kategori: "Surat",
       nama_jenis: "",
       deskripsi: "",
       status: "aktif",
-      fields_config: { fields: [] },
-      upload_config: { allow_upload: true, max_files: 5, max_size_mb: 5, allowed_types: ["pdf", "jpg", "png"] }
+      fields_config: {
+        fields: []
+      },
+      upload_config: {
+        allow_upload: true,
+        max_files: 5,
+        max_size_mb: 5,
+        allowed_types: ["pdf", "jpg", "png"]
+      }
     });
+
     setTempFields([]);
     setEditJenisSuratId(null);
   };
-  
+    
   // Field builder functions
   const addField = () => {
     setTempFields([...tempFields, { name: "", label: "", type: "text", required: false, placeholder: "", options: [] }]);
@@ -807,7 +932,7 @@ export default function DokumenPage() {
       arsip: { color: "bg-gray-100 text-gray-800 border-gray-200", icon: Archive, label: "Arsip" },
       MENUNGGU: { color: "bg-orange-100 text-orange-800 border-orange-200", icon: Clock, label: "Menunggu" },
       DRAFT: { color: "bg-gray-100 text-gray-800 border-gray-200", icon: FileText, label: "Draft" },
-      LEGALISI: { color: "bg-purple-100 text-purple-800 border-purple-200", icon: FileCheck, label: "Legalisasi" },
+      LEGALISASI: { color: "bg-purple-100 text-purple-800 border-purple-200", icon: FileCheck, label: "Legalisasi" },
       SIAP: { color: "bg-blue-100 text-blue-800 border-blue-200", icon: CheckCircle, label: "Siap" },
       SELESAI: { color: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle, label: "Selesai" }
     };
@@ -823,8 +948,8 @@ export default function DokumenPage() {
   const getNextSuratStatus = (status) => {
     switch (status) {
       case "MENUNGGU": return "DRAFT";
-      case "DRAFT": return "LEGALISI";
-      case "LEGALISI": return "SIAP";
+      case "DRAFT": return "LEGALISASI";
+      case "LEGALISASI": return "SIAP";
       case "SIAP": return "SELESAI";
       case "SELESAI": return "SELESAI";
       default: return status || "";
@@ -835,7 +960,7 @@ export default function DokumenPage() {
     switch (status) {
       case "MENUNGGU": return "Verifikasi";
       case "DRAFT": return "Proses Draft";
-      case "LEGALISI": return "TTD & Cap";
+      case "LEGALISASI": return "TTD & Cap";
       case "SIAP": return "Tandai Diambil";
       case "SELESAI": return "Lihat";
       default: return "Proses";
@@ -858,7 +983,7 @@ export default function DokumenPage() {
             Proses Draft
           </button>
         );
-      case "LEGALISI":
+      case "LEGALISASI":
         return (
           <button onClick={() => openSuratModal(row, nextStatus)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
             TTD & Cap
@@ -891,8 +1016,16 @@ export default function DokumenPage() {
   
   // ==================== FILTERS & PAGINATION ====================
   
+  // Pastikan filter kategori bekerja dengan benar
   const filteredDokumen = dokumen.filter(item => {
     if (dokumenFilter.search && !item.judul_dokumen?.toLowerCase().includes(dokumenFilter.search.toLowerCase())) return false;
+    
+    // Filter kategori - gunakan nilai default jika tidak ada
+    if (dokumenFilter.kategori) {
+      const itemKategori = item.kategori || item.jenis_dokumen || "";
+      if (itemKategori !== dokumenFilter.kategori) return false;
+    }
+    
     if (dokumenFilter.jenis && item.jenis_dokumen !== dokumenFilter.jenis) return false;
     if (dokumenFilter.status && item.status_dokumen !== dokumenFilter.status) return false;
     return true;
@@ -919,8 +1052,29 @@ export default function DokumenPage() {
     });
   
   const filteredJenisSurat = jenisSurat.filter(item => {
-    if (jenisSuratFilter.search && !item.nama_jenis?.toLowerCase().includes(jenisSuratFilter.search.toLowerCase())) return false;
-    if (jenisSuratFilter.status && item.status !== jenisSuratFilter.status) return false;
+    if (
+      jenisSuratFilter.search &&
+      !item.nama_jenis
+        ?.toLowerCase()
+        .includes(jenisSuratFilter.search.toLowerCase())
+    ) {
+      return false;
+    }
+
+    if (
+      jenisSuratFilter.kategori &&
+      item.kategori !== jenisSuratFilter.kategori
+    ) {
+      return false;
+    }
+
+    if (
+      jenisSuratFilter.status &&
+      item.status !== jenisSuratFilter.status
+    ) {
+      return false;
+    }
+
     return true;
   });
   
@@ -960,7 +1114,7 @@ export default function DokumenPage() {
   const suratStats = {
     MENUNGGU: pengajuanSurat.filter(p => p.status === 'MENUNGGU').length,
     DRAFT: pengajuanSurat.filter(p => p.status === 'DRAFT').length,
-    LEGALISI: pengajuanSurat.filter(p => p.status === 'LEGALISI').length,
+    LEGALISASI: pengajuanSurat.filter(p => p.status === 'LEGALISASI').length,
     SIAP: pengajuanSurat.filter(p => p.status === 'SIAP').length,
     SELESAI: pengajuanSurat.filter(p => p.status === 'SELESAI').length
   };
@@ -972,9 +1126,8 @@ export default function DokumenPage() {
     return acc;
   }, { merah: 0, kuning: 0, hijau: 0 });
 
-  // ==================== PERBAIKAN 2: PRIORITY DATATABLE LOGIC ====================
+  // ==================== PRIORITY DATATABLE LOGIC ====================
   
-  // Data untuk tabel prioritas
   const allPriorityData = useMemo(() => {
     return activePengajuanSurat.map((item) => {
       const priority = getSuratPriority(item);
@@ -996,16 +1149,13 @@ export default function DokumenPage() {
     });
   }, [activePengajuanSurat]);
 
-  // Filter priority data
   const filteredPriorityData = useMemo(() => {
     let data = [...allPriorityData];
     
-    // Filter by level
     if (priorityFilterLevel !== "semua") {
       data = data.filter(item => item.level === priorityFilterLevel);
     }
     
-    // Filter by search
     if (prioritySearchTerm) {
       const search = prioritySearchTerm.toLowerCase();
       data = data.filter(item => 
@@ -1015,7 +1165,6 @@ export default function DokumenPage() {
       );
     }
     
-    // Sort data
     data.sort((a, b) => {
       let comparison = 0;
       switch (prioritySortField) {
@@ -1048,7 +1197,6 @@ export default function DokumenPage() {
     return data;
   }, [allPriorityData, priorityFilterLevel, prioritySearchTerm, prioritySortField, prioritySortDirection]);
 
-  // Priority table pagination
   const priorityTotalItems = filteredPriorityData.length;
   const priorityTotalPages = Math.ceil(priorityTotalItems / priorityItemsPerPage);
   const priorityStartIndex = (priorityCurrentPage - 1) * priorityItemsPerPage;
@@ -1093,6 +1241,31 @@ export default function DokumenPage() {
           </div>
         </div>
       )
+    },
+    // Ganti bagian ini di dokumenColumns:
+    { 
+      header: "KATEGORI", 
+      accessor: "kategori",
+      render: (value, row) => {
+        // Debug untuk melihat nilai kategori
+        console.log("Kategori value:", value, "Row:", row);
+        
+        // Tentukan warna berdasarkan nilai kategori
+        const isSurat = value === "Surat";
+        const isDokumenAdat = value === "Dokumen Adat/Desa";
+        
+        return (
+          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
+            isSurat 
+              ? "bg-blue-100 text-blue-800 border-blue-200" 
+              : isDokumenAdat
+                ? "bg-purple-100 text-purple-800 border-purple-200"
+                : "bg-gray-100 text-gray-800 border-gray-200"
+          }`}>
+            {value || '-'}
+          </span>
+        );
+      }
     },
     { 
       header: "JENIS", 
@@ -1188,44 +1361,74 @@ export default function DokumenPage() {
   ];
 
   const jenisSuratColumns = [
-    { 
-      header: "NAMA JENIS", 
-      accessor: "nama_jenis",
+    {
+      header: "KATEGORI",
+      accessor: "kategori",
       render: (value) => (
-        <span className="font-medium text-gray-900">{value}</span>
+        <span
+          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
+            value === "Surat"
+              ? "bg-blue-100 text-blue-800 border-blue-200"
+              : "bg-purple-100 text-purple-800 border-purple-200"
+          }`}
+        >
+          {value || "-"}
+        </span>
       )
     },
-    { 
-      header: "DESKRIPSI", 
+
+    {
+      header: "NAMA JENIS",
+      accessor: "nama_jenis",
+      render: (value) => (
+        <span className="font-medium text-gray-900">
+          {value || "-"}
+        </span>
+      )
+    },
+
+    {
+      header: "DESKRIPSI",
       accessor: "deskripsi",
       render: (value) => (
         <span className="text-sm text-gray-600 line-clamp-1">
-          {value ? `${value.substring(0, 50)}...` : "-"}
+          {value
+            ? value.length > 50
+              ? `${value.substring(0, 50)}...`
+              : value
+            : "-"}
         </span>
       )
     },
-    { 
-      header: "JUMLAH FIELD", 
+
+    {
+      header: "JUMLAH FIELD",
       accessor: "fields_config",
       render: (value) => (
-        <span className="text-sm text-gray-700">{value?.fields?.length || 0} field</span>
-      )
-    },
-    { 
-      header: "UPLOAD BUKTI", 
-      accessor: "upload_config",
-      render: (value) => (
-        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
-          value?.allow_upload 
-            ? "bg-green-100 text-green-800 border-green-200" 
-            : "bg-gray-100 text-gray-800 border-gray-200"
-        }`}>
-          {value?.allow_upload ? 'Ya' : 'Tidak'}
+        <span className="text-sm text-gray-700">
+          {value?.fields?.length || 0} field
         </span>
       )
     },
-    { 
-      header: "STATUS", 
+
+    {
+      header: "UPLOAD BUKTI",
+      accessor: "upload_config",
+      render: (value) => (
+        <span
+          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
+            value?.allow_upload
+              ? "bg-green-100 text-green-800 border-green-200"
+              : "bg-gray-100 text-gray-800 border-gray-200"
+          }`}
+        >
+          {value?.allow_upload ? "Ya" : "Tidak"}
+        </span>
+      )
+    },
+
+    {
+      header: "STATUS",
       accessor: "status",
       render: (value) => getStatusBadge(value)
     }
@@ -1373,7 +1576,7 @@ export default function DokumenPage() {
               onClick={() => { resetJenisSuratForm(); setIsJenisSuratModalOpen(true); }}
               className="bg-gradient-to-r from-amber-600 to-amber-600 hover:from-amber-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg hover:shadow-xl transition-all"
             >
-              <Plus className="w-5 h-5" /> Tambah Jenis Surat
+              <Plus className="w-5 h-5" /> Tambah Jenis Dokumen
             </motion.button>
           )}
         </div>
@@ -1401,7 +1604,6 @@ export default function DokumenPage() {
             }`}
           >
             <Users className="w-4 h-4" /> Manajemen Surat
-            {/* Notifikasi angka langsung muncul karena data sudah di-fetch saat mount */}
             {suratStats.MENUNGGU > 0 && (
               <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">
                 {suratStats.MENUNGGU}
@@ -1488,9 +1690,9 @@ export default function DokumenPage() {
                 <ChevronRight className={`w-4 h-4 transition-transform ${showDokumenFilters ? 'rotate-90' : ''}`} />
               </button>
               
-              {(dokumenFilter.search || dokumenFilter.jenis || dokumenFilter.status) && (
+              {(dokumenFilter.search || dokumenFilter.kategori || dokumenFilter.jenis || dokumenFilter.status) && (
                 <button
-                  onClick={() => setDokumenFilter({ search: "", jenis: "", status: "" })}
+                  onClick={() => setDokumenFilter({ search: "", kategori: "", jenis: "", status: "" })}
                   className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700"
                 >
                   <X className="w-4 h-4" />
@@ -1507,7 +1709,7 @@ export default function DokumenPage() {
                   transition={{ duration: 0.3 }}
                   className="overflow-hidden"
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t">
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 pt-4 border-t">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <input 
@@ -1520,11 +1722,21 @@ export default function DokumenPage() {
                     </div>
                     <select 
                       className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent" 
+                      value={dokumenFilter.kategori} 
+                      onChange={(e) => setDokumenFilter({ ...dokumenFilter, kategori: e.target.value })}
+                    >
+                      <option value="">Semua Kategori</option>
+                      {kategoriOptions.map(k => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                    <select 
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent" 
                       value={dokumenFilter.jenis} 
                       onChange={(e) => setDokumenFilter({ ...dokumenFilter, jenis: e.target.value })}
                     >
                       <option value="">Semua Jenis</option>
-                      {jenisDokumenOptions.map(j => <option key={j} value={j}>{j}</option>)}
+                      {jenisSurat.filter(j => j.status === 'aktif').map(j => (
+                        <option key={j.nama_jenis} value={j.nama_jenis}>{j.nama_jenis}</option>
+                      ))}
                     </select>
                     <select 
                       className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent" 
@@ -1751,10 +1963,16 @@ export default function DokumenPage() {
                     <p className="text-sm text-gray-600 mb-1">{s.label}</p>
                     <p className="text-2xl font-bold text-gray-800">{suratStats[s.value] || 0}</p>
                   </div>
-                  <div className={`w-10 h-10 bg-${s.color}-100 rounded-xl flex items-center justify-center`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                    s.color === 'orange' ? 'bg-orange-100' : 
+                    s.color === 'gray' ? 'bg-gray-100' : 
+                    s.color === 'purple' ? 'bg-purple-100' : 
+                    s.color === 'blue' ? 'bg-blue-100' : 
+                    'bg-green-100'
+                  }`}>
                     {s.value === 'MENUNGGU' && <Clock className="w-5 h-5 text-orange-600" />}
                     {s.value === 'DRAFT' && <FileText className="w-5 h-5 text-gray-600" />}
-                    {s.value === 'LEGALISI' && <FileCheck className="w-5 h-5 text-purple-600" />}
+                    {s.value === 'LEGALISASI' && <FileCheck className="w-5 h-5 text-purple-600" />}
                     {s.value === 'SIAP' && <CheckCircle className="w-5 h-5 text-blue-600" />}
                     {s.value === 'SELESAI' && <CheckCircle className="w-5 h-5 text-green-600" />}
                   </div>
@@ -1763,9 +1981,8 @@ export default function DokumenPage() {
             ))}
           </div>
 
-          {/* ==================== PERBAIKAN 2: NOTIFIKASI PRIORITAS BERBENTUK DATATABLE ==================== */}
+          {/* Notifikasi Prioritas DataTable */}
           <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-gray-200">
-            {/* Header */}
             <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                 <div className="flex items-start gap-3">
@@ -1780,7 +1997,6 @@ export default function DokumenPage() {
                   </div>
                 </div>
                 
-                {/* Summary Cards */}
                 <div className="grid grid-cols-3 gap-3 w-full lg:w-auto">
                   <div className="rounded-xl border-2 border-red-200 bg-gradient-to-br from-red-50 to-red-100 px-4 py-3 text-center shadow-sm">
                     <div className="flex items-center justify-center gap-1.5 mb-1">
@@ -2247,7 +2463,7 @@ export default function DokumenPage() {
         <>
           {/* Filter */}
           <div className="bg-white rounded-xl shadow-lg p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input 
@@ -2258,6 +2474,16 @@ export default function DokumenPage() {
                   onChange={(e) => setJenisSuratFilter({ ...jenisSuratFilter, search: e.target.value })} 
                 />
               </div>
+              <select 
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent" 
+                value={jenisSuratFilter.kategori} 
+                onChange={(e) => setJenisSuratFilter({ ...jenisSuratFilter, kategori: e.target.value })}
+              >
+                <option value="">Semua Kategori</option>
+                {kategoriOptions.map(k => (
+                  <option key={k} value={k}>{k}</option>
+                ))}
+              </select>
               <select 
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent" 
                 value={jenisSuratFilter.status} 
@@ -2465,6 +2691,33 @@ export default function DokumenPage() {
               required 
             />
           </div>
+          {/* Kategori Dokumen */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Kategori Dokumen <span className="text-red-500">*</span>
+            </label>
+            <select
+              className="w-full border border-gray-300 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              value={dokumenForm.kategori || ""}
+              onChange={(e) => {
+                const newKategori = e.target.value;
+                console.log("Kategori dipilih:", newKategori); // Debug
+                setDokumenForm({
+                  ...dokumenForm,
+                  kategori: newKategori,
+                  jenis_dokumen: "" // Reset jenis dokumen saat kategori berubah
+                });
+              }}
+              required
+            >
+              <option value="">Pilih Kategori</option>
+              {kategoriOptions.map(k => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </div>
+          
+          {/* Jenis Dokumen - Filter berdasarkan kategori */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Jenis Dokumen <span className="text-red-500">*</span>
@@ -2474,11 +2727,15 @@ export default function DokumenPage() {
               value={dokumenForm.jenis_dokumen} 
               onChange={(e) => setDokumenForm({ ...dokumenForm, jenis_dokumen: e.target.value })} 
               required
+              disabled={!dokumenForm.kategori}
             >
-              <option value="">Pilih Jenis Dokumen</option>
+              <option value="">
+                {dokumenForm.kategori ? "Pilih Jenis Dokumen" : "Pilih Kategori Terlebih Dahulu"}
+              </option>
               {jenisDokumenOptions.map(j => <option key={j} value={j}>{j}</option>)}
             </select>
           </div>
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Hak Akses</label>
             <select 
@@ -2490,6 +2747,7 @@ export default function DokumenPage() {
               <option value="terbatas">Terbatas</option>
             </select>
           </div>
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Deskripsi</label>
             <textarea 
@@ -2499,6 +2757,7 @@ export default function DokumenPage() {
               onChange={(e) => setDokumenForm({ ...dokumenForm, deskripsi_dokumen: e.target.value })} 
             />
           </div>
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
             <select 
@@ -2510,6 +2769,7 @@ export default function DokumenPage() {
               <option value="arsip">Arsip</option>
             </select>
           </div>
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               File Dokumen {!editDokumenId && <span className="text-red-500">*</span>}
@@ -2518,7 +2778,10 @@ export default function DokumenPage() {
               type="file" 
               accept=".pdf" 
               className="w-full border border-gray-300 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent" 
-              onChange={(e) => { setSelectedFile(e.target.files[0]); setDokumenForm({ ...dokumenForm, file: e.target.files[0] }); }} 
+              onChange={(e) => { 
+                setSelectedFile(e.target.files[0]); 
+                setDokumenForm({ ...dokumenForm, file: e.target.files[0] }); 
+              }} 
             />
             {editDokumenId && <p className="text-xs text-amber-600 mt-1">*Kosongkan jika tidak ingin mengubah file</p>}
             {uploadProgress > 0 && (
@@ -2530,6 +2793,7 @@ export default function DokumenPage() {
               </div>
             )}
           </div>
+          
           <div className="flex gap-2 pt-4">
             <button 
               type="submit" 
@@ -2653,8 +2917,8 @@ export default function DokumenPage() {
                   />
                 </div>
                 
-                {/* Upload File Final - dengan validasi required untuk status LEGALISI dan SIAP */}
-                {(suratStatus === "LEGALISI" || suratStatus === "SIAP") && (
+                {/* Upload File Final */}
+                {(suratStatus === "LEGALISASI" || suratStatus === "SIAP") && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Upload File Final Surat (PDF) 
@@ -2679,12 +2943,11 @@ export default function DokumenPage() {
                   </div>
                 )}
                 
-                {/* Tombol Aksi - dengan validasi file required */}
+                {/* Tombol Aksi */}
                 <div className="flex gap-2 pt-4">
                   <button 
                     onClick={() => {
-                      // Validasi untuk status LEGALISI dan SIAP: file final wajib diupload
-                      if ((suratStatus === "LEGALISI" || suratStatus === "SIAP") && !suratFileFinal) {
+                      if ((suratStatus === "LEGALISASI" || suratStatus === "SIAP") && !suratFileFinal) {
                         alert("File final surat (PDF) wajib diupload sebelum menyimpan perubahan!");
                         return;
                       }
@@ -2779,8 +3042,31 @@ export default function DokumenPage() {
       </Modal>
       
       {/* ==================== MODAL JENIS SURAT ==================== */}
-      <Modal isOpen={isJenisSuratModalOpen} onClose={() => { setIsJenisSuratModalOpen(false); resetJenisSuratForm(); }} title={editJenisSuratId ? "Edit Jenis Surat" : "Tambah Jenis Surat"} size="xl">
+      <Modal isOpen={isJenisSuratModalOpen} onClose={() => { setIsJenisSuratModalOpen(false); resetJenisSuratForm(); }} title={editJenisSuratId ? "Edit Jenis Dokumen" : "Tambah Jenis Dokumen"} size="xl">
         <form onSubmit={handleJenisSuratSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Kategori - BARU */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Kategori Dokumen <span className="text-red-500">*</span>
+            </label>
+            <select
+              className="w-full border border-gray-300 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+              value={jenisSuratForm.kategori}
+              onChange={(e) =>
+                setJenisSuratForm({
+                  ...jenisSuratForm,
+                  kategori: e.target.value
+                })
+              }
+              required
+            >
+              <option value="">Pilih Kategori</option>
+              {kategoriOptions.map(k => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </div>
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Nama Jenis Surat <span className="text-red-500">*</span>
@@ -2793,6 +3079,7 @@ export default function DokumenPage() {
               required 
             />
           </div>
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Deskripsi</label>
             <textarea 
@@ -2802,6 +3089,7 @@ export default function DokumenPage() {
               onChange={(e) => setJenisSuratForm({ ...jenisSuratForm, deskripsi: e.target.value })} 
             />
           </div>
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
             <select 
@@ -2826,6 +3114,7 @@ export default function DokumenPage() {
                 <Plus className="w-4 h-4" /> Tambah Field
               </button>
             </div>
+            
             {tempFields.map((field, idx) => (
               <div key={idx} className="border-t pt-3 mt-3 first:border-t-0 first:pt-0">
                 <div className="grid grid-cols-2 gap-2">
@@ -2844,6 +3133,7 @@ export default function DokumenPage() {
                     onChange={(e) => updateField(idx, "label", e.target.value)} 
                   />
                 </div>
+                
                 <div className="grid grid-cols-4 gap-2 mt-2">
                   <select 
                     className="border border-gray-300 rounded-lg p-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent" 
@@ -2856,6 +3146,7 @@ export default function DokumenPage() {
                     <option value="number">Number</option>
                     <option value="select">Select</option>
                   </select>
+                  
                   <label className="flex items-center gap-1 text-sm">
                     <input 
                       type="checkbox" 
@@ -2863,6 +3154,15 @@ export default function DokumenPage() {
                       onChange={(e) => updateField(idx, "required", e.target.checked)} 
                     /> Wajib
                   </label>
+                  
+                  <input 
+                    type="text" 
+                    placeholder="Placeholder" 
+                    className="border border-gray-300 rounded-lg p-1 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent" 
+                    value={field.placeholder || ""} 
+                    onChange={(e) => updateField(idx, "placeholder", e.target.value)} 
+                  />
+                  
                   <button 
                     type="button" 
                     onClick={() => removeField(idx)} 
@@ -2871,17 +3171,19 @@ export default function DokumenPage() {
                     Hapus
                   </button>
                 </div>
+                
                 {field.type === 'select' && (
                   <input 
                     type="text" 
                     placeholder="Opsi (pisahkan dengan koma)" 
                     className="w-full border border-gray-300 rounded-lg p-1 text-sm mt-2 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent" 
-                    value={field.options?.join(', ')} 
+                    value={field.options?.join(', ') || ""} 
                     onChange={(e) => updateField(idx, "options", e.target.value.split(',').map(s => s.trim()).filter(Boolean))} 
                   />
                 )}
               </div>
             ))}
+            
             {tempFields.length === 0 && (
               <p className="text-gray-400 text-sm text-center py-4">
                 Belum ada field. Klik "Tambah Field" untuk menambahkan.
@@ -2892,6 +3194,7 @@ export default function DokumenPage() {
           {/* Upload Config */}
           <div className="border rounded-lg p-4">
             <h4 className="font-medium mb-3 text-gray-800">Konfigurasi Upload Bukti</h4>
+            
             <label className="flex items-center gap-2 mb-2">
               <input 
                 type="checkbox" 
@@ -2902,6 +3205,7 @@ export default function DokumenPage() {
                 })} 
               /> Aktifkan Upload Bukti
             </label>
+            
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-sm text-gray-600">Maksimal File</label>
@@ -2917,6 +3221,7 @@ export default function DokumenPage() {
                   })} 
                 />
               </div>
+              
               <div>
                 <label className="text-sm text-gray-600">Maksimal Ukuran (MB)</label>
                 <input 
@@ -2932,6 +3237,7 @@ export default function DokumenPage() {
                 />
               </div>
             </div>
+            
             <div className="mt-2">
               <label className="text-sm text-gray-600">Format yang Diizinkan</label>
               <div className="flex gap-3 mt-1">
@@ -2979,6 +3285,7 @@ export default function DokumenPage() {
                     <h3 className="font-bold text-lg text-gray-800">{selectedDokumen.judul_dokumen}</h3>
                     <p className="text-gray-600 text-sm mt-1">{selectedDokumen.deskripsi_dokumen}</p>
                     <div className="flex gap-2 mt-2">
+                      <span className="text-xs text-gray-500">Kategori: {selectedDokumen.kategori || "-"}</span>
                       <span className="text-xs text-gray-500">Jenis: {selectedDokumen.jenis_dokumen}</span>
                       <span className="text-xs text-gray-500">Tanggal: {formatDate(selectedDokumen.tanggal_upload)}</span>
                     </div>
