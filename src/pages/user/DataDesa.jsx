@@ -253,6 +253,7 @@ export default function DataDesa() {
 
   const normalizeJenisSuratItem = (item) => ({
     ...item,
+    kategori: item?.kategori || "",
     fields_config: normalizeFieldsConfig(item?.fields_config),
     upload_config: normalizeUploadConfig(item?.upload_config)
   });
@@ -261,11 +262,17 @@ export default function DataDesa() {
     ...item,
     jenis_surat: item?.jenis_surat || {
       id_jenis: item?.id_jenis,
+      kategori: item?.kategori || "",
       nama_jenis: item?.nama_jenis || "-"
     },
     detail_fields: item?.detail_fields || [],
     lampiran: item?.lampiran || []
   });
+
+  const jenisSuratUntukPengajuan = useMemo(
+    () => jenisSurat.filter((jenis) => jenis.kategori === "Surat"),
+    [jenisSurat]
+  );
   
   // Fetch dokumen publik (tanpa login)
   const fetchDokumenPublik = async () => {
@@ -290,7 +297,9 @@ export default function DataDesa() {
       const res = await axios.get(`${API_BASE_URL}/surat/jenis/aktif`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       });
-      const normalizedJenis = (res.data?.data || []).map(normalizeJenisSuratItem);
+      const normalizedJenis = (res.data?.data || [])
+        .map(normalizeJenisSuratItem)
+        .filter((jenis) => jenis.kategori === "Surat");
       setJenisSurat(normalizedJenis);
     } catch (err) {
       console.error("Error fetching jenis surat:", err);
@@ -506,6 +515,7 @@ export default function DataDesa() {
   // Semua data ditampilkan permanen tanpa filter expired
   const allStatusData = useMemo(() => {
     return pengajuanSaya
+      .filter((item) => !item.jenis_surat?.kategori || item.jenis_surat.kategori === "Surat")
       .map(item => {
         const alasanField = item.detail_fields?.find(
           f => f.field_name === 'alasan_dispensasi' || 
@@ -1012,7 +1022,7 @@ export default function DataDesa() {
                       <label className="block text-sm font-medium text-gray-700 mb-2">Jenis Surat <span className="text-red-500">*</span></label>
                       <select className="w-full md:w-1/2 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500" value={selectedJenisSurat?.id_jenis || ""} onChange={(e) => handleJenisSuratChange(e.target.value)}>
                         <option value="">Pilih Jenis Surat</option>
-                        {jenisSurat.map(jenis => <option key={jenis.id_jenis} value={jenis.id_jenis}>{jenis.nama_jenis}</option>)}
+                        {jenisSuratUntukPengajuan.map(jenis => <option key={jenis.id_jenis} value={jenis.id_jenis}>{jenis.nama_jenis}</option>)}
                       </select>
                     </div>
                     
@@ -1178,7 +1188,7 @@ export default function DataDesa() {
                         className="w-full px-4 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                       >
                         <option value="">Semua Jenis Surat</option>
-                        {jenisSurat.map(j => (
+                        {jenisSuratUntukPengajuan.map(j => (
                           <option key={j.id_jenis} value={j.id_jenis}>{j.nama_jenis}</option>
                         ))}
                       </select>
