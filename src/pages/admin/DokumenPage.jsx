@@ -158,7 +158,8 @@ export default function DokumenPage() {
       max_files: 5,
       max_size_mb: 5,
       allowed_types: ["pdf", "jpg", "png"]
-    }
+    },
+    template_surat: null
   });
   const [editJenisSuratId, setEditJenisSuratId] = useState(null);
   const [tempFields, setTempFields] = useState([]);
@@ -224,7 +225,8 @@ export default function DokumenPage() {
         max_files: 5,
         max_size_mb: 5,
         allowed_types: ["pdf", "jpg", "png"]
-      })
+      }),
+      template_surat: item.template_surat || null
     }));
 
   const normalizePengajuan = (items = []) =>
@@ -236,7 +238,8 @@ export default function DokumenPage() {
       },
       jenis_surat: item.jenis_surat || {
         id_jenis: item.id_jenis,
-        nama_jenis: item.nama_jenis || "-"
+        nama_jenis: item.nama_jenis || "-",
+        template_surat: item.template_surat || null
       },
       detail_fields: item.detail_fields || [],
       lampiran: item.lampiran || [],
@@ -728,6 +731,43 @@ export default function DokumenPage() {
     setSelectedSuratPreview(pengajuan);
     setIsSuratPreviewOpen(true);
   };
+
+  const getTemplateUrl = (idJenis) => `${SURAT_API_URL}/jenis/${idJenis}/template`;
+
+  const fetchTemplateBlob = async (idJenis) => {
+    const response = await axios.get(getTemplateUrl(idJenis), {
+      headers: { Authorization: `Bearer ${token}` },
+      responseType: "blob"
+    });
+    return URL.createObjectURL(response.data);
+  };
+
+  const handleViewTemplate = async (idJenis) => {
+    try {
+      const blobUrl = await fetchTemplateBlob(idJenis);
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      alert(error.response?.data?.message || "Template surat tidak dapat dibuka");
+    }
+  };
+
+  const handleDownloadTemplate = async (idJenis, namaJenis = "template-surat", templatePath = "") => {
+    try {
+      const blobUrl = await fetchTemplateBlob(idJenis);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      const extension = templatePath.includes(".")
+        ? templatePath.substring(templatePath.lastIndexOf("."))
+        : ".docx";
+      link.download = `${namaJenis}${extension}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      alert(error.response?.data?.message || "Template surat tidak dapat diunduh");
+    }
+  };
   
   // ==================== JENIS SURAT CRUD ====================
   
@@ -744,16 +784,16 @@ export default function DokumenPage() {
       return;
     }
 
-    const data = {
-      kategori: jenisSuratForm.kategori,
-      nama_jenis: jenisSuratForm.nama_jenis.trim(),
-      deskripsi: jenisSuratForm.deskripsi || "",
-      status: jenisSuratForm.status || "aktif",
-      fields_config: {
-        fields: tempFields
-      },
-      upload_config: jenisSuratForm.upload_config
-    };
+    const data = new FormData();
+    data.append("kategori", jenisSuratForm.kategori);
+    data.append("nama_jenis", jenisSuratForm.nama_jenis.trim());
+    data.append("deskripsi", jenisSuratForm.deskripsi || "");
+    data.append("status", jenisSuratForm.status || "aktif");
+    data.append("fields_config", JSON.stringify({ fields: tempFields }));
+    data.append("upload_config", JSON.stringify(jenisSuratForm.upload_config));
+    if (jenisSuratForm.template_surat) {
+      data.append("template_surat", jenisSuratForm.template_surat);
+    }
 
     try {
       setLoading(true);
@@ -763,9 +803,7 @@ export default function DokumenPage() {
           `${SURAT_API_URL}/jenis/${editJenisSuratId}`,
           data,
           {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
+            headers: { Authorization: `Bearer ${token}` }
           }
         );
 
@@ -775,9 +813,7 @@ export default function DokumenPage() {
           `${SURAT_API_URL}/jenis`,
           data,
           {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
+            headers: { Authorization: `Bearer ${token}` }
           }
         );
 
@@ -822,7 +858,8 @@ export default function DokumenPage() {
       deskripsi: item.deskripsi || "",
       status: item.status || "aktif",
       fields_config: normalizedFieldsConfig,
-      upload_config: normalizedUploadConfig
+      upload_config: normalizedUploadConfig,
+      template_surat: null
     });
 
     setTempFields(
@@ -831,6 +868,7 @@ export default function DokumenPage() {
         : []
     );
 
+    setSelectedJenisSurat(item);
     setEditJenisSuratId(item.id_jenis);
     setIsJenisSuratModalOpen(true);
   };
@@ -866,10 +904,12 @@ export default function DokumenPage() {
         max_files: 5,
         max_size_mb: 5,
         allowed_types: ["pdf", "jpg", "png"]
-      }
+      },
+      template_surat: null
     });
 
     setTempFields([]);
+    setSelectedJenisSurat(null);
     setEditJenisSuratId(null);
   };
     
@@ -1357,6 +1397,20 @@ export default function DokumenPage() {
           <span className="text-xs text-gray-400">Belum ada file</span>
         )
       )
+    },
+    {
+      header: "TEMPLATE",
+      accessor: "jenis_surat",
+      render: (value, row) => value?.template_surat ? (
+        <div className="flex items-center gap-1">
+          <button onClick={() => handleViewTemplate(value.id_jenis)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="Lihat template">
+            <Eye className="w-4 h-4" />
+          </button>
+          <button onClick={() => handleDownloadTemplate(value.id_jenis, value.nama_jenis, value.template_surat)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Download template">
+            <Download className="w-4 h-4" />
+          </button>
+        </div>
+      ) : <span className="text-xs text-gray-400">Belum ada template</span>
     }
   ];
 
@@ -1431,6 +1485,20 @@ export default function DokumenPage() {
       header: "STATUS",
       accessor: "status",
       render: (value) => getStatusBadge(value)
+    },
+    {
+      header: "TEMPLATE SURAT",
+      accessor: "template_surat",
+      render: (value, row) => value ? (
+        <div className="flex items-center gap-1">
+          <button onClick={() => handleViewTemplate(row.id_jenis)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" title="Lihat template">
+            <Eye className="w-4 h-4" />
+          </button>
+          <button onClick={() => handleDownloadTemplate(row.id_jenis, row.nama_jenis, value)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Download template">
+            <Download className="w-4 h-4" />
+          </button>
+        </div>
+      ) : <span className="text-xs text-gray-400">Belum ada template</span>
     }
   ];
 
@@ -3100,6 +3168,20 @@ export default function DokumenPage() {
               <option value="aktif">Aktif</option>
               <option value="nonaktif">Nonaktif</option>
             </select>
+          </div>
+
+          <div className="border rounded-lg p-4">
+            <h4 className="font-medium mb-2 text-gray-800">Template Surat</h4>
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx"
+              className="w-full border border-gray-300 p-2 rounded-lg text-sm file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-amber-50 file:text-amber-700"
+              onChange={(e) => setJenisSuratForm({ ...jenisSuratForm, template_surat: e.target.files?.[0] || null })}
+            />
+            <p className="text-xs text-gray-500 mt-1">Format PDF, DOC, atau DOCX. Kosongkan saat edit jika template tidak diubah.</p>
+            {editJenisSuratId && selectedJenisSurat?.template_surat && (
+              <p className="text-xs text-emerald-600 mt-1">Template saat ini tersedia.</p>
+            )}
           </div>
           
           {/* Field Builder Section */}
