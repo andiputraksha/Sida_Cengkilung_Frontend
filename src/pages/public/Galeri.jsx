@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import { API_BASE_URL, BACKEND_BASE_URL, buildAssetUrl } from "@/utils/api";
@@ -67,26 +67,17 @@ export default function Galeri() {
     } catch (error) {
       console.error("Error fetching categories:", error);
       // Fallback categories
-      setCategories(["Semua", "Spiritual", "Seni", "Sosial"]);
+      setCategories(["Semua", "Kegiatan Desa Adat", "Kegiatan STT", "Spiritual", "Seni", "Sosial"]);
     }
   };
 
-  const getCategoryName = (id) => {
-    const categoryMap = {
-      1: "Spiritual",
-      2: "Seni",
-      3: "Sosial"
-    };
-    return categoryMap[id] || "Umum";
-  };
+  const getCategoryName = (item) => item?.nama_kategori || "Umum";
 
-  const getCategoryColor = (id) => {
-    const colorMap = {
-      1: "bg-amber-100 text-amber-700",
-      2: "bg-amber-100 text-amber-700",
-      3: "bg-green-100 text-green-700"
-    };
-    return colorMap[id] || "bg-gray-100 text-gray-700";
+  const getCategoryColor = (item) => {
+    const categoryName = getCategoryName(item);
+    if (categoryName === "Kegiatan Desa Adat") return "bg-amber-100 text-amber-700";
+    if (categoryName === "Kegiatan STT") return "bg-blue-100 text-blue-700";
+    return "bg-gray-100 text-gray-700";
   };
 
   const getTypeIcon = (type) => {
@@ -168,7 +159,7 @@ export default function Galeri() {
 
   // Filter galeri berdasarkan kategori dan tipe
   const filteredGaleri = galeri.filter(item => {
-    const categoryMatch = activeCategory === "Semua" || getCategoryName(item.id_kategori_galeri) === activeCategory;
+    const categoryMatch = activeCategory === "Semua" || getCategoryName(item) === activeCategory;
     const typeMatch = activeType === "Semua" || item.tipe_media === activeType.toLowerCase();
     return categoryMatch && typeMatch;
   });
@@ -400,8 +391,8 @@ export default function Galeri() {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {currentItems.map((item, index) => {
               const itemId = item.id_galeri || item.id;
-              const itemKategori = getCategoryName(item.id_kategori_galeri);
-              const kategoriColor = getCategoryColor(item.id_kategori_galeri);
+              const itemKategori = getCategoryName(item);
+              const kategoriColor = getCategoryColor(item);
               const tanggal = formatDate(item.tanggal_publikasi || item.tanggal_dibuat);
               const imageCandidates = getImageCandidates(item);
               const currentAttempt = imageErrors[itemId] || 0;
@@ -611,8 +602,8 @@ export default function Galeri() {
             {/* Info */}
             <div className="p-6">
               <div className="flex items-center gap-3 mb-3">
-                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getCategoryColor(selectedItem.id_kategori_galeri)}`}>
-                  {getCategoryName(selectedItem.id_kategori_galeri)}
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getCategoryColor(selectedItem)}`}>
+                  {getCategoryName(selectedItem)}
                 </span>
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 ${
                   selectedItem.tipe_media === 'foto' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
