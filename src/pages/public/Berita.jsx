@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import { API_BASE_URL, BACKEND_BASE_URL, buildAssetUrl } from "@/utils/api";
@@ -45,44 +45,23 @@ export default function Berita() {
       
       setBerita(beritaSorted);
       setTotalPages(Math.ceil(beritaSorted.length / itemsPerPage));
-      
-      // Ekstrak kategori unik dari data berita
-      extractCategories(beritaSorted);
+      setCategories([
+        "Semua",
+        ...new Set(
+          beritaSorted
+            .map((item) => item.nama_kategori)
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b))
+        )
+      ]);
       
     } catch (error) {
       console.error("Error fetching berita:", error);
       // Fallback categories jika error
-      setCategories(["Semua", "Spiritual", "Seni", "Sosial"]);
+      setCategories(["Semua", "Kegiatan Desa Adat", "Kegiatan STT", "Spiritual", "Seni", "Sosial"]);
     } finally {
       setLoading(false);
     }
-  };
-
-  const extractCategories = (beritaList) => {
-    // Mapping ID kategori ke nama
-    const categoryMap = {
-      1: "Spiritual",
-      2: "Seni", 
-      3: "Sosial"
-    };
-    
-    // Ambil semua kategori unik dari data berita
-    const uniqueCategoryIds = [...new Set(beritaList.map(item => item.id_kategori_konten))];
-    const uniqueCategories = uniqueCategoryIds
-      .map(id => categoryMap[id])
-      .filter(name => name) // Hapus undefined
-      .sort();
-    
-    setCategories(["Semua", ...uniqueCategories]);
-  };
-
-  const getCategoryName = (id) => {
-    const categoryMap = {
-      1: "Spiritual",
-      2: "Seni", 
-      3: "Sosial"
-    };
-    return categoryMap[id] || "Umum";
   };
 
   const formatDate = (dateString) => {
@@ -106,10 +85,7 @@ export default function Berita() {
   // Filter berita berdasarkan kategori
   const filteredBerita = activeCategory === "Semua"
     ? berita
-    : berita.filter(item => {
-        const categoryName = getCategoryName(item.id_kategori_konten);
-        return categoryName === activeCategory;
-      });
+    : berita.filter(item => item.nama_kategori === activeCategory);
 
   // Pagination
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -281,7 +257,7 @@ export default function Berita() {
               const itemGambar = item.thumbnail || item.gambar;
               const itemRingkasan = item.ringkasan || item.isi_konten || item.isi || "";
               const itemTanggal = item.tanggal_publikasi || item.tanggal_dibuat;
-              const itemKategori = getCategoryName(item.id_kategori_konten);
+              const itemKategori = item.nama_kategori || "Umum";
               
               return (
                 <article
