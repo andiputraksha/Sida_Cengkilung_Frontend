@@ -148,7 +148,7 @@ export default function Sejarah() {
     { id: "asal-usul", label: "Asal Usul Nama" },
     { id: "keunikan", label: "Keunikan Budaya" },
     { id: "perkembangan", label: "Perkembangan Modern" },
-    { id: "timeline", label: "Linimasa" }
+    // { id: "timeline", label: "Linimasa" }
   ];
 
   const scrollToSection = (sectionId) => {
